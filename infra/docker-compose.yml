@@ -1,0 +1,25 @@
+# 프로젝트 이름을 고정한다. 이게 없으면 디렉터리명(infra)에서 이름이 만들어져,
+# 파일 위치를 옮길 때마다 볼륨이 새로 생기고 데이터가 끊긴다.
+name: ticketing
+
+services:
+  redis:
+    # 재현 가능한 측정을 위해 태그를 고정한다. latest 금지.
+    image: redis:8.8.0-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    command: redis-server /usr/local/etc/redis/redis.conf
+    volumes:
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - redis-data:/data
+    mem_limit: 1G
+    cpus: "1.0"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  redis-data:
