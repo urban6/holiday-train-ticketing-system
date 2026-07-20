@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: ticketing
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+management:
+  endpoint:
+    health:
+      # Redis 컴포넌트 상태를 응답에 펼쳐서 보여준다.
+      # 로컬 학습 환경 전제. 외부에 노출되는 환경에서는 내부 정보가 새므로
+      # never 또는 when-authorized로 바꿔야 한다.
+      show-details: always
