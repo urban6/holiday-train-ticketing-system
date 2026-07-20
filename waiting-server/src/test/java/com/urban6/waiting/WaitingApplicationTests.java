@@ -1,10 +1,10 @@
-package com.urban6.ticketing;
+package com.urban6.waiting;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest
-class TicketingApplicationTests {
+class WaitingApplicationTests {
 
 	@Test
 	void contextLoads() {

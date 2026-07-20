@@ -1,13 +1,13 @@
-package com.urban6.ticketing;
+package com.urban6.waiting;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class TicketingApplication {
+public class WaitingApplication {
 
 	public static void main(String[] args) {
-		SpringApplication.run(TicketingApplication.class, args);
+		SpringApplication.run(WaitingApplication.class, args);
 	}
 
 }

@@ -1,6 +1,9 @@
 spring:
+  threads:
+    virtual:
+      enabled: true
   application:
-    name: ticketing
+    name: waiting
 
   data:
     redis:
@@ -14,3 +17,7 @@ management:
       # 로컬 학습 환경 전제. 외부에 노출되는 환경에서는 내부 정보가 새므로
       # never 또는 when-authorized로 바꿔야 한다.
       show-details: always
+
+logging:
+  level:
+    com.urban6.waiting: debug
