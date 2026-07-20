@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>명절열차 · 명절 승차권 예약</title>
+    <link rel="stylesheet" th:href="@{/css/main.css}">
+</head>
+<body>
+
+<header class="site-header">
+    <div class="container header-inner">
+        <a class="wordmark" href="/">
+            <span class="wordmark-mark">명절</span><span class="wordmark-rest">열차</span>
+        </a>
+        <nav class="header-nav" aria-label="회원 메뉴">
+            <ul class="nav-group nav-group--cert">
+                <li><a href="#">국가유공자 인증</a></li>
+                <li><a href="#">장애인 인증</a></li>
+            </ul>
+            <ul class="nav-group">
+                <li><a href="#">회원가입</a></li>
+                <li><a href="#">비밀번호 찾기</a></li>
+                <li><a href="#">회원번호 찾기</a></li>
+            </ul>
+        </nav>
+    </div>
+</header>
+
+<main>
+
+    <section class="hero">
+        <div class="container">
+            <p class="hero-eyebrow">명절 승차권 예약</p>
+            <h1 class="hero-title">고향 가는 길,<br>편안하게 모시겠습니다</h1>
+            <p class="hero-desc">접속자가 많을 경우 대기열을 거쳐 순서대로 입장합니다.</p>
+        </div>
+    </section>
+
+    <section class="section section--cta">
+        <div class="container">
+            <a class="cta cta--primary" href="#">
+                <span class="cta-label">명절 승차권 예약</span>
+                <span class="cta-desc">회원만 예약할 수 있습니다. 장애인·국가유공자는 사전 등록 후 이용해 주세요.</span>
+            </a>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title">참고 정보</h2>
+            <ul class="link-grid">
+                <li><a href="#">공지사항</a></li>
+                <li><a href="#">예약방법 안내</a></li>
+                <li><a href="#">열차시각 조회</a></li>
+                <li><a href="#">잔여석 현황</a></li>
+            </ul>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title">예약 유의사항</h2>
+            <ul class="notice-list">
+                <li>예약 화면은 <strong>하나의 인터넷 창에서만</strong> 접속할 수 있습니다. 여러 창에서 동시에 접속하면 대기 순번이 초기화될 수 있습니다.</li>
+                <li>접속자가 많은 시간에는 대기열을 통해 순서대로 입장하게 됩니다. 새로고침을 반복해도 순번은 앞당겨지지 않습니다.</li>
+                <li>결제까지 마쳐야 예약이 확정됩니다. 좌석 선점 상태로 일정 시간이 지나면 자동으로 해제됩니다.</li>
+            </ul>
+        </div>
+    </section>
+
+</main>
+
+<footer class="site-footer">
+    <div class="container">
+        <p class="footer-note">
+            대규모 트래픽과 동시성 제어를 연습하기 위한 <strong>학습용 프로젝트</strong>입니다.
+            실제 승차권을 판매하지 않으며, 어떤 실제 기관과도 관련이 없습니다.
+        </p>
+    </div>
+</footer>
+
+</body>
+</html>
