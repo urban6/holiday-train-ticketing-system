@@ -28,7 +28,7 @@ public class WaitingQueueService {
                 window.closeAt().plus(WAITING_GRACE),
                 window.closeAt().plus(SEQ_GRACE));
 
-        log.debug("대기열 진입. window={}, seq={}", window.windowId(), seq);
+        // log.debug("대기열 진입. window={}, seq={}", window.windowId(), seq);
         return new Ticket(uuid, window.windowId(), seq);
     }
 
