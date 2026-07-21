@@ -1,0 +1,37 @@
+# 부하 테스트 전용 프로파일.
+# 측정을 왜곡하는 것만 끈다. 그 외에는 기본 프로파일과 같다.
+#
+#   java -jar waiting-server/build/libs/waiting-0.0.1.jar \
+#        --spring.profiles.active=loadtest
+
+logging:
+  level:
+    # info로 둔다. 터미널에서 java -jar로 띄울 때
+    # "Started WaitingApplication" / "Tomcat started on port 8080"이 안 보이면
+    # 앱이 준비됐는지 알 수 없다.
+    root: info
+    # 요청당 로그는 끈다. System.out의 내부 락이 Java 21 가상 스레드에서
+    # pinning 지점이라, 켜두면 대기열이 아니라 로거를 측정하게 된다.
+    # (현재 WaitingQueueService의 log.debug는 주석 처리돼 있지만,
+    #  되살려도 부하 테스트가 오염되지 않도록 여기서 한 번 더 막는다.)
+    com.urban6.waiting: warn
+
+spring:
+  data:
+    redis:
+      # 기본값 60초. 포화 시 에러가 나는 게 아니라 그냥 매달린다.
+      timeout: 1s
+
+server:
+  tomcat:
+    # 기본 100. 100요청마다 커넥션이 끊기면 임시포트(16384개)와
+    # TIME_WAIT(약 30초) 때문에 약 546 conn/s에서 막힌다.
+    # 서버가 아니라 macOS TCP 스택을 측정하게 된다.
+    max-keep-alive-requests: -1
+
+    # 커널 accept 큐에 요청하는 크기. 기본 100.
+    # 실효 백로그는 min(이 값, kern.ipc.somaxconn)이라 둘 다 올려야 의미가 있다.
+    #   sudo sysctl -w kern.ipc.somaxconn=1024
+    # 큐가 넘치면 커널이 연결을 그냥 버려서 클라이언트에는 connection reset으로 보인다.
+    # VU 2000 동시 접속에서 간헐적 실패의 원인이었다.
+    accept-count: 1000
