@@ -4,7 +4,11 @@
 //   k6 run -e WAITERS=5000 k6/status.js
 //
 // WAITERS        동시에 대기하는 사람 수 = VU 수 (기본 1000)
-// POLL_INTERVAL  조회 간격, 초 (기본 2 — waiting.js의 POLL_INTERVAL_MS와 맞춘 값)
+// POLL_INTERVAL  조회 간격, 초 (기본 5 — waiting.js의 POLL_INTERVAL_MS와 맞춘 값)
+// POLL_JITTER    조회 간격에 더할 지터 폭, 초 (기본 1.25 — waiting.js의 POLL_JITTER_MS와 맞춘 값)
+//                매 조회마다 POLL_INTERVAL ± POLL_JITTER 사이 균등분포로 흔든다.
+//                진입 직후 첫 조회 전에도 0~POLL_INTERVAL 사이 무작위 지연을 한 번 둬서,
+//                수많은 VU가 같은 순간 진입해도 이후 조회 위상이 겹치지 않게 한다.
 // DURATION       유지 시간 (기본 1m)
 //
 // 진입 부하와 성격이 다르다. 진입은 1인당 1회지만 조회는 1인당 N회라,
@@ -25,7 +29,8 @@ import http from 'k6/http';
 import { check, sleep, fail } from 'k6';
 
 const WAITERS = parseInt(__ENV.WAITERS || '1000', 10);
-const POLL_INTERVAL = parseFloat(__ENV.POLL_INTERVAL || '2');
+const POLL_INTERVAL = parseFloat(__ENV.POLL_INTERVAL || '5');
+const POLL_JITTER = parseFloat(__ENV.POLL_JITTER || '1.25');
 const DURATION = __ENV.DURATION || '1m';
 // localhost를 쓰면 macOS가 ::1을 먼저 시도해 요청마다 오버헤드가 붙는다.
 const BASE_URL = __ENV.BASE_URL || 'http://127.0.0.1:8080';
@@ -59,6 +64,11 @@ export default function () {
     }
     const body = res.json();
     ticket = { token: body.token, windowId: body.windowId };
+
+    // constant-vus는 모든 VU를 거의 같은 순간 시작시킨다. 진입 직후 곧바로 첫 조회를
+    // 보내면 그 위상이 그대로 굳어 이후 조회마다 요청이 몰린다.
+    // waiting.js의 첫 폴링 지연(0~POLL_INTERVAL)을 그대로 재현해 위상을 흩어 놓는다.
+    sleep(Math.random() * POLL_INTERVAL);
   }
 
   const url = `${BASE_URL}/api/v1/waiting-queue/${ticket.token}?windowId=${ticket.windowId}`;
@@ -79,5 +89,7 @@ export default function () {
     },
   });
 
-  sleep(POLL_INTERVAL);
+  // 매 조회마다 같은 지터로 흔들어 위상이 다시 맞아들어가는 걸 막는다.
+  // POLL_JITTER를 POLL_INTERVAL보다 크게 주면 음수가 나올 수 있어 0으로 바닥을 둔다.
+  sleep(Math.max(0, POLL_INTERVAL + (Math.random() * 2 - 1) * POLL_JITTER));
 }
