@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<body>
+
+<!--
+  로고. 화면마다 따로 그리면 한 곳만 고쳐 놓고 나머지를 잊게 되므로 조각으로 뺀다.
+
+  로고 그림은 CSS(.brand-logo)의 data URI가 그린다 — 외부 이미지를 받지 않는다는
+  규칙(main.css 상단)에 맞추고, 세 화면이 같은 그림을 공유하게 하려는 것.
+
+  @param tag 로고 옆에 붙일 꼬리표. 없으면(null) 로고만 나온다.
+-->
+<a class="brand" th:fragment="logo(tag)" href="/">
+
+    <!--
+      그림만 있고 글자가 없으므로 스크린리더가 읽을 이름을 role/aria-label로 준다.
+      학습용 서비스임은 각 화면 꼬리말이 따로 밝힌다.
+    -->
+    <span class="brand-logo" role="img" aria-label="코레일 명절예매"></span>
+
+    <span class="brand-tag" th:if="${tag}" th:text="${tag}"></span>
+
+</a>
+
+</body>
+</html>

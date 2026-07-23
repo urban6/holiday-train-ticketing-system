@@ -1,7 +1,9 @@
 package com.urban6.waiting.queue;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.QueryTimeoutException;
@@ -18,7 +20,7 @@ public class WaitingQueueRepository {
 
     private final StringRedisTemplate redis;
     private final RedisScript<Long> enqueueScript;
-    private final RedisScript<Long> claimScript;
+    private final RedisScript<Long> restampScript;
     @SuppressWarnings("rawtypes")
     private final RedisScript<List> statusScript;
     @SuppressWarnings("rawtypes")
@@ -52,10 +54,10 @@ public class WaitingQueueRepository {
                 uuid,
                 String.valueOf(nowMillis));
 
-        if (result == null || result.size() < 3) {
-            throw new IllegalStateException("스크립트가 state/rank/total을 반환하지 않았습니다: " + windowId);
+        if (result == null || result.size() < 4) {
+            throw new IllegalStateException("스크립트가 state/rank/total/expireAt을 반환하지 않았습니다: " + windowId);
         }
-        return new Snapshot(result.get(0), result.get(1), result.get(2));
+        return new Snapshot(result.get(0), result.get(1), result.get(2), result.get(3));
     }
 
     /**
@@ -79,27 +81,42 @@ public class WaitingQueueRepository {
     }
 
     /**
-     * 입장권을 실제로 쓴다. 활성 만료시각을 admissionGrace에서 sessionTtl로 늘린다.
+     * 활성 슬롯의 만료시각을 지금부터 ttl 뒤로 다시 찍는다.
+     * 입장 확정(sessionTtl)과 로그인(reservationTtl)이 같은 스크립트를 ttl만 바꿔 쓴다.
      *
      * @return 활성이 아니거나 이미 만료됐으면 false
      */
-    public boolean claim(String windowId, String uuid, long nowMillis, QueueProperties properties) {
-        Long claimed = execute(claimScript, "입장 확정", windowId,
+    public boolean restamp(String windowId, String uuid, long nowMillis, Duration ttl, String operation) {
+        Long restamped = execute(restampScript, operation, windowId,
                 List.of(QueueKeys.active(windowId)),
                 uuid,
                 String.valueOf(nowMillis),
-                String.valueOf(properties.sessionTtl().toMillis()));
+                String.valueOf(ttl.toMillis()));
 
-        return claimed != null && claimed == 1L;
+        return restamped != null && restamped == 1L;
     }
 
     /**
-     * Redis 예외를 도메인 예외로 옮기는 지점. 네 스크립트가 모두 같은 방식으로 실패한다.
+     * 활성 슬롯을 즉시 비운다. 로그아웃처럼 사용자가 스스로 나가는 경우다.
+     *
+     * <p>만료를 기다리지 않고 여기서 지우는 만큼 정원이 그대로 앞당겨 회수된다.
+     * 단일 명령이라 Lua로 묶을 이유가 없다 — 원자성이 필요한 "세고 꺼내기"가 없다.
      */
+    public void release(String windowId, String uuid) {
+        run("입장권 반납", windowId, () -> redis.opsForZSet().remove(QueueKeys.active(windowId), uuid));
+    }
+
     private <T> T execute(RedisScript<T> script, String operation, String windowId,
                           List<String> keys, String... args) {
+        return run(operation, windowId, () -> redis.execute(script, keys, (Object[]) args));
+    }
+
+    /**
+     * Redis 예외를 도메인 예외로 옮기는 지점. 스크립트든 단일 명령이든 같은 방식으로 실패한다.
+     */
+    private <T> T run(String operation, String windowId, Supplier<T> call) {
         try {
-            return redis.execute(script, keys, (Object[]) args);
+            return call.get();
         } catch (RedisConnectionFailureException | QueryTimeoutException e) {
             log.error("{} 실패 - Redis 통신 오류. window={}", operation, windowId, e);
             throw new QueueException.Unavailable("대기열이 일시적으로 불가합니다.", e);
@@ -117,8 +134,9 @@ public class WaitingQueueRepository {
     /**
      * status.lua의 한 스냅샷. rank는 0-based이며 대기 중이 아니면 -1이다.
      * total은 대기 인원으로, 입장한 뒤에도 "지금 몇 명이 기다리는지"로 의미가 남는다.
+     * expireAt은 활성 만료 epoch ms이며, 활성이 아니면 -1이다.
      */
-    public record Snapshot(long state, long rank, long total) {
+    public record Snapshot(long state, long rank, long total, long expireAt) {
 
         private static final long WAITING = 0;
         private static final long ADMITTED = 1;

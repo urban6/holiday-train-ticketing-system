@@ -3,74 +3,158 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>명절열차 · 명절 승차권 예약</title>
+    <title>명절열차 · 명절 승차권 예매</title>
     <link rel="stylesheet" th:href="@{/css/main.css}">
 </head>
-<body>
+<body class="landing-body">
 
-<header class="site-header">
-    <div class="container header-inner">
-        <a class="wordmark" href="/">
-            <span class="wordmark-mark">명절</span><span class="wordmark-rest">열차</span>
-        </a>
-        <nav class="header-nav" aria-label="회원 메뉴">
-            <ul class="nav-group nav-group--cert">
-                <li><a href="#">국가유공자 인증</a></li>
-                <li><a href="#">장애인 인증</a></li>
-            </ul>
-            <ul class="nav-group">
-                <li><a href="#">회원가입</a></li>
-                <li><a href="#">비밀번호 찾기</a></li>
-                <li><a href="#">회원번호 찾기</a></li>
-            </ul>
-        </nav>
+<!--
+  아이콘 스프라이트. 외부 이미지를 받지 않는다는 규칙(main.css 상단)은 여기서도 같다.
+  두 승차권 카드가 같은 열차 그림을 쓰므로 <symbol>로 한 번만 정의하고 <use>로 꺼내 쓴다.
+-->
+<svg class="sprite" aria-hidden="true" focusable="false">
+    <symbol id="icon-train" viewBox="0 0 220 96">
+        <path d="M8 70 C40 68 58 38 100 32 H202 a10 10 0 0 1 10 10 v28 Z"
+              fill="#fbfcfe" stroke="#cbd2dd" stroke-width="2"/>
+        <path d="M44 56 C60 46 76 42 102 42 H212 v10 H42 Z" fill="#26365e"/>
+        <rect x="8" y="69" width="204" height="5" rx="2.5" fill="#3f5bd9"/>
+        <circle cx="30" cy="63" r="3.5" fill="#f2c14e"/>
+    </symbol>
+    <symbol id="icon-info" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round">
+        <circle cx="12" cy="12" r="9"/>
+        <path d="M12 7.6v.1M12 11v5.4"/>
+    </symbol>
+    <symbol id="icon-guide" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="4" y="3.5" width="16" height="17" rx="2"/>
+        <path d="M8 8.5h8M8 12h8M8 15.5h5"/>
+    </symbol>
+    <symbol id="icon-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="9"/>
+        <path d="M12 7v5.3l3.4 2"/>
+    </symbol>
+    <symbol id="icon-seat" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M7 4h6a3 3 0 0 1 3 3v7H7z"/>
+        <path d="M5 12h13a2 2 0 0 1 2 2v6M5 12V6"/>
+    </symbol>
+</svg>
+
+<header class="site-header site-header--flat">
+    <div class="container container--wide header-inner">
+        <div th:replace="~{fragments/brand :: logo('명절예매')}"></div>
     </div>
 </header>
 
 <main>
 
-<div id="landing">
+<div id="landing" class="stage">
 
-    <section class="hero">
-        <div class="container">
-            <p class="hero-eyebrow">명절 승차권 예약</p>
-            <h1 class="hero-title">고향 가는 길,<br>편안하게 모시겠습니다</h1>
-            <p class="hero-desc">접속자가 많을 경우 대기열을 거쳐 순서대로 입장합니다.</p>
-        </div>
-    </section>
+    <!--
+      달과 '추석' 글자는 장식일 뿐이라 읽을 내용이 없다.
+      스크린리더가 배경 글자를 본문 사이에 끼워 읽으면 예매일정이 끊기므로 통째로 숨긴다.
+    -->
+    <div class="stage-deco" aria-hidden="true">
+        <span class="deco-moon"></span>
+        <span class="deco-calligraphy">秋夕</span>
+    </div>
 
-    <section class="section section--cta">
-        <div class="container">
-            <button type="button" id="enqueue-btn" class="cta cta--primary">
-                <span class="cta-label">명절 승차권 예약</span>
-                <span class="cta-desc">회원만 예약할 수 있습니다. 장애인·국가유공자는 사전 등록 후 이용해 주세요.</span>
-            </button>
-            <p class="cta-error" id="enqueue-error" role="alert" hidden></p>
-        </div>
-    </section>
+    <div class="container container--wide board">
 
-    <section class="section">
-        <div class="container">
-            <h2 class="section-title">참고 정보</h2>
-            <ul class="link-grid">
-                <li><a href="#">공지사항</a></li>
-                <li><a href="#">예약방법 안내</a></li>
-                <li><a href="#">열차시각 조회</a></li>
-                <li><a href="#">잔여석 현황</a></li>
-            </ul>
-        </div>
-    </section>
+        <div class="board-grid">
 
-    <section class="section">
-        <div class="container">
-            <h2 class="section-title">예약 유의사항</h2>
-            <ul class="notice-list">
-                <li>예약 화면은 <strong>하나의 인터넷 창에서만</strong> 접속할 수 있습니다. 여러 창에서 동시에 접속하면 대기 순번이 초기화될 수 있습니다.</li>
-                <li>접속자가 많은 시간에는 대기열을 통해 순서대로 입장하게 됩니다. <strong>새로고침하거나 대기 창을 닫으면 순번이 사라져</strong> 처음부터 다시 받아야 합니다.</li>
-                <li>결제까지 마쳐야 예약이 확정됩니다. 좌석 선점 상태로 일정 시간이 지나면 자동으로 해제됩니다.</li>
-            </ul>
+            <section class="schedule">
+                <h1 class="schedule-title">2026년 추석<br>승차권 예매일정</h1>
+
+                <div class="schedule-block">
+                    <h2 class="schedule-heading">장애인, 경로, 국가유공자 회원 추석 승차권 예매</h2>
+                    <ul class="schedule-list">
+                        <li><b>9월 1일(화) 9시~15시</b> : 경부선, 경전선, 동해선(포항) 등</li>
+                        <li><b>9월 2일(수) 9시~15시</b> : 호남선, 전라선, 강릉선, 중앙선 등</li>
+                    </ul>
+                </div>
+
+                <div class="schedule-block">
+                    <h2 class="schedule-heading">일반 회원 추석 승차권 예매</h2>
+                    <ul class="schedule-list">
+                        <li><b>9월 3일(목) 7시~13시</b> : 경부선, 경전선, 동해선(포항) 등</li>
+                        <li><b>9월 4일(금) 7시~13시</b> : 호남선, 전라선, 강릉선, 중앙선 등</li>
+                    </ul>
+                </div>
+
+                <p class="schedule-promo">
+                    <a href="#"><span class="promo-badge" aria-hidden="true"></span>추석 승차권 예매 필수시청! 핵심만 전해드림!</a>
+                </p>
+
+                <p class="schedule-guide">원활한 예매를 위해 10분 전부터 대기하여 주시기 바랍니다.</p>
+            </section>
+
+            <section class="tickets" aria-labelledby="tickets-heading">
+                <h2 id="tickets-heading" class="sr-only">승차권 선택</h2>
+
+                <div class="ticket-grid">
+
+                    <!--
+                      대기열에 들어가는 유일한 입구다. 여기 말고는 진입 경로가 없다.
+                      button 요소여야 하는 이유 — JS가 요청 중에 disabled로 잠가
+                      연타로 같은 사람이 여러 자리를 잡는 걸 막는다.
+                    -->
+                    <button type="button" id="enqueue-btn" class="ticket-card ticket-card--primary">
+                        <span class="ticket-visual">
+                            <svg class="ticket-train" viewBox="0 0 220 96" aria-hidden="true"><use href="#icon-train"/></svg>
+                        </span>
+                        <span class="ticket-name"><b>명절</b> 승차권</span>
+                        <span class="ticket-sub">예약만 가능</span>
+                    </button>
+
+                    <!--
+                      평상시 승차권은 이 서비스의 범위 밖이다. 클릭해도 대기열에 들어가지 않으므로
+                      button이 아니라 비활성 카드로 둔다. 눌리는 것처럼 보이면 안 된다.
+                    -->
+                    <div class="ticket-card ticket-card--muted" aria-disabled="true">
+                        <span class="ticket-visual">
+                            <svg class="ticket-train" viewBox="0 0 220 96" aria-hidden="true"><use href="#icon-train"/></svg>
+                        </span>
+                        <span class="ticket-name"><b>평상시</b> 승차권</span>
+                        <span class="ticket-sub">일반 예매 홈페이지로 이동</span>
+                    </div>
+
+                </div>
+
+                <!--
+                  게이트(AdmissionGuard)에 걸려 돌아온 경우의 안내다.
+                  JS가 채우는 #enqueue-error와 자리는 같지만, 이건 서버가 렌더 시점에 넣는 값이라
+                  요소를 나눠 둔다. 하나로 합치면 진입 실패 메시지가 이걸 덮어쓴다.
+                -->
+                <p class="board-alert" role="alert" th:if="${notice}" th:text="${notice}"></p>
+                <p class="board-alert" id="enqueue-error" role="alert" hidden></p>
+
+                <ul class="ticket-notes">
+                    <li>비회원 고객은 회원가입 후 이용이 가능합니다.</li>
+                    <li>본 페이지는 명절 승차권 예약 전용으로 9월 4일 13시까지만 운영됩니다.</li>
+                    <li>예약한 승차권은 예약 조회·취소 화면에서 결제하셔야 확정됩니다.</li>
+                </ul>
+            </section>
+
         </div>
-    </section>
+
+        <nav class="quick-links" aria-label="참고 정보">
+            <a href="#"><svg class="quick-icon" aria-hidden="true"><use href="#icon-info"/></svg>공지사항</a>
+            <a href="#"><svg class="quick-icon" aria-hidden="true"><use href="#icon-guide"/></svg>명절 승차권 예약 방법</a>
+            <a href="#"><svg class="quick-icon" aria-hidden="true"><use href="#icon-clock"/></svg>열차시각 조회</a>
+            <a href="#"><svg class="quick-icon" aria-hidden="true"><use href="#icon-seat"/></svg>잔여석현황</a>
+        </nav>
+
+        <nav class="member-links" aria-label="회원 메뉴">
+            <a href="#">장애인 인증</a>
+            <a href="#">유공자 인증</a>
+            <a href="#">아이디/비밀번호 찾기</a>
+            <a href="#">회원가입</a>
+        </nav>
+
+    </div>
 
 </div>
 
@@ -110,7 +194,7 @@
 </dialog>
 
 <footer class="site-footer">
-    <div class="container">
+    <div class="container container--wide">
         <p class="footer-note">
             대규모 트래픽과 동시성 제어를 연습하기 위한 <strong>학습용 프로젝트</strong>입니다.
             실제 승차권을 판매하지 않으며, 어떤 실제 기관과도 관련이 없습니다.

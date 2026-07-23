@@ -21,5 +21,41 @@ services:
       timeout: 3s
       retries: 5
 
+  postgres:
+    # redis와 같은 이유로 태그를 고정한다.
+    image: postgres:18.4-alpine
+    container_name: postgres
+    ports:
+      # 호스트 포트가 5432가 아니라 5433이다.
+      # 개발 머신에 이미 Postgres가 깔려 있으면 그쪽이 127.0.0.1:5432와 [::1]:5432를 잡는데,
+      # Docker의 0.0.0.0:5432보다 구체적인 바인딩이라 localhost 접속이 전부 그쪽으로 간다.
+      # 컨테이너는 멀쩡히 떠 있는데 앱만 'role "ticketing" does not exist'로 실패하는,
+      # 원인을 찾기 유난히 성가신 형태로 드러난다. 포트를 비켜서 아예 겹치지 않게 한다.
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: ticketing
+      POSTGRES_USER: ticketing
+      # 로컬 실험 환경 전제다. 외부에 노출되는 환경에서는 절대 이 값을 그대로 쓰지 말 것.
+      POSTGRES_PASSWORD: ticketing
+      # 정렬 규칙이 호스트 로케일을 따라가면 인덱스 동작이 환경마다 갈린다.
+      # 재현 가능한 측정이 목적이므로 인코딩과 로케일을 고정한다.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      # PG18부터 이미지의 VOLUME이 /var/lib/postgresql/data 에서 /var/lib/postgresql 로 옮겨졌고
+      # PGDATA는 /var/lib/postgresql/18/docker 다. 예전 경로에 마운트하면 에러 없이 그냥
+      # 영속되지 않는다 — 컨테이너를 지우는 순간 데이터가 사라지는데 로그에는 아무 흔적도 없다.
+      - postgres-data:/var/lib/postgresql
+    # redis와 같은 상한을 준다. k6·애플리케이션·DB가 모두 같은 Mac에서 CPU를 나눠 쓰므로
+    # DB가 측정 대상의 몫을 잠식하지 않게 막는 의미도 있다. 좌석 페이즈에서 재검토한다.
+    mem_limit: 1G
+    cpus: "1.0"
+    healthcheck:
+      # pg_isready에 -U/-d를 주지 않으면 컨테이너의 기본 사용자(root)로 물어보다 실패한다.
+      test: ["CMD-SHELL", "pg_isready -U ticketing -d ticketing"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
 volumes:
   redis-data:
+  postgres-data:

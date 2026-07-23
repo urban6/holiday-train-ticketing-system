@@ -22,9 +22,34 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
+	implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+
+	// BCrypt만 쓰려고 넣는다. spring-boot-starter-security와 달리 서블릿 필터 체인이
+	// 딸려 오지 않아서, 대기열 API 경로에 요청당 비용이 한 톨도 늘지 않는다.
+	// (spring-core에는 의존한다. 위 스타터들이 이미 가져오므로 추가할 것은 없다.)
+	implementation 'org.springframework.security:spring-security-crypto'
+
+	// Boot 4는 자동 구성을 기술별 모듈로 쪼갰다. flyway-core만 넣으면 라이브러리는 클래스패스에
+	// 있는데 자동 구성이 붙지 않아, 마이그레이션이 조용히 실행되지 않는다.
+	// 기동은 멀쩡히 성공하고 테이블만 없는 상태가 되므로 특히 알아채기 어렵다.
+	implementation 'org.springframework.boot:spring-boot-flyway'
+	// Flyway 10부터 DB별 지원도 모듈로 갈라졌다. 이게 없으면 Postgres를 못 알아본다.
+	runtimeOnly 'org.flywaydb:flyway-database-postgresql'
+	runtimeOnly 'org.postgresql:postgresql'
+
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+
+	// Flyway는 기동 시점에 마이그레이션을 돌리므로, DB가 없으면 컨텍스트 로드 테스트부터 깨진다.
+	// (Redis는 커넥션이 지연 생성이라 지금까지는 Docker 없이도 테스트가 통과했다.)
+	// 테스트가 자립하도록 테스트 전용 Postgres를 컨테이너로 띄운다.
+	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	// Testcontainers 2.x에서 아티팩트 이름이 바뀌었다(postgresql → testcontainers-postgresql).
+	// 예전 이름을 쓰면 BOM에 없어서 버전을 못 찾는다는 형태로 실패한다.
+	testImplementation 'org.testcontainers:testcontainers-postgresql'
+	testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+
 	testCompileOnly 'org.projectlombok:lombok'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testAnnotationProcessor 'org.projectlombok:lombok'

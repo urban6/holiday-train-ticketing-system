@@ -4,6 +4,7 @@ import com.urban6.waiting.queue.WaitingQueueRepository.Promotion;
 import com.urban6.waiting.queue.WaitingQueueRepository.Snapshot;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.OptionalLong;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -58,6 +59,26 @@ public class WaitingQueueService {
     }
 
     /**
+     * 이 토큰이 지금 활성이면 만료 시각(epoch ms), 아니면 비어 있다.
+     * 입장 자격이 필요한 화면(pass 쿠키 검증)이 쓴다.
+     *
+     * <p>status와 같은 스크립트를 쓴다. status.lua가 이미 active ZSet의 ZSCORE를 만료까지
+     * 보고 판정하므로 새 스크립트를 만들 이유가 없다. 화면 진입당 한 번뿐이라 대기 인원과
+     * 무관하게 비용이 일정하다 — 폴링 경로와 달리 인원수만큼 곱해지지 않는다.
+     *
+     * <p>boolean이 아니라 만료 시각을 돌려주는 이유는 예약 화면의 남은 시간 때문이다.
+     * 게이트가 어차피 읽는 값이라, 화면이 같은 것을 다시 물어보지 않아도 된다.
+     *
+     * <p>windowId 형식은 호출자가 먼저 거른다. 여기서 던지면 페이지 요청에 400 JSON이 나간다.
+     * Redis가 죽었을 때의 Unavailable(503)은 그대로 전파한다 — 대기열 자체가 돌지 않는 상황이라
+     * 로그인 화면만 멀쩡한 척하는 것이 오히려 거짓말이다.
+     */
+    public OptionalLong activeUntil(String windowId, String token) {
+        Snapshot snapshot = repository.status(windowId, token, clock.millis());
+        return snapshot.admitted() ? OptionalLong.of(snapshot.expireAt()) : OptionalLong.empty();
+    }
+
+    /**
      * 승격된 사용자가 입장권을 실제로 쓴다. 활성 유지 시간이 sessionTtl로 늘어난다.
      * 실패는 대개 admissionGrace가 지나 슬롯이 회수된 경우다.
      * Expired(404)로 넘겨서 클라이언트의 기존 만료 처리에 그대로 맞물리게 한다.
@@ -65,9 +86,41 @@ public class WaitingQueueService {
     public void claim(String windowId, String token) {
         QueueKeys.requireValidWindowId(windowId);
 
-        if (!repository.claim(windowId, token, clock.millis(), properties)) {
+        if (!repository.restamp(windowId, token, clock.millis(), properties.sessionTtl(), "입장 확정")) {
             throw new QueueException.Expired("입장 가능 시간이 지났습니다.");
         }
+    }
+
+    /**
+     * 로그인이 끝난 시점에 부른다. 활성 유지 시간을 reservationTtl로 다시 찍는다 —
+     * 여기서부터가 예약에 주어진 시간이고, 지나면 활성 슬롯이 회수되어 게이트가 랜딩으로 돌려보낸다.
+     *
+     * <p>claim에서 받은 sessionTtl(10분)은 "로그인할 시간"이지 "예약할 시간"이 아니다.
+     * 로그인을 마친 순간 그 시간은 역할이 끝났으므로, 남은 만큼을 그대로 들고 가지 않고 짧게 다시 찍는다.
+     * 그만큼 정원이 빨리 회전한다.
+     *
+     * <p>이미 회수된 슬롯은 되살아나지 않는다(restamp가 false). 게이트를 통과한 뒤 이 호출까지의
+     * 짧은 사이에 만료된 경우이며, 호출자는 로그인을 성립시키지 않고 랜딩으로 보내야 한다.
+     */
+    public void startReservation(String windowId, String token) {
+        QueueKeys.requireValidWindowId(windowId);
+
+        if (!repository.restamp(windowId, token, clock.millis(), properties.reservationTtl(), "예약 시간 시작")) {
+            throw new QueueException.Expired("입장 가능 시간이 지났습니다.");
+        }
+    }
+
+    /**
+     * 활성 슬롯을 자발적으로 반납한다. 로그아웃이 유일한 호출자다.
+     *
+     * <p>만료를 기다리지 않고 즉시 비우므로 뒷사람이 그만큼 빨리 들어온다.
+     * 동시에 "로그아웃하고 다시 로그인해서 예약 시간을 새로 받는" 경로를 막는다 —
+     * 슬롯이 없으면 로그인 화면 자체에 도달하지 못하고, 대기열부터 다시 타야 한다.
+     */
+    public void release(String windowId, String token) {
+        QueueKeys.requireValidWindowId(windowId);
+
+        repository.release(windowId, token);
     }
 
     /**

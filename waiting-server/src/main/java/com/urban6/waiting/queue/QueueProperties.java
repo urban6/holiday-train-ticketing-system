@@ -15,7 +15,8 @@ public record QueueProperties(
         int maxBatch,
         Duration promoteInterval,
         Duration admissionGrace,
-        Duration sessionTtl
+        Duration sessionTtl,
+        Duration reservationTtl
 ) {
 
     public QueueProperties {
@@ -24,6 +25,7 @@ public record QueueProperties(
         require(positive(promoteInterval), "queue.promote-interval이 없거나 0 이하입니다.");
         require(positive(admissionGrace), "queue.admission-grace가 없거나 0 이하입니다.");
         require(positive(sessionTtl), "queue.session-ttl이 없거나 0 이하입니다.");
+        require(positive(reservationTtl), "queue.reservation-ttl이 없거나 0 이하입니다.");
     }
 
     private static boolean positive(Duration d) {

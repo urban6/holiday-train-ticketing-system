@@ -10,6 +10,41 @@ spring:
       host: localhost
       port: 6379
 
+  datasource:
+    # 5432가 아니라 5433이다. 이유는 infra/docker-compose.yml의 포트 주석 참고.
+    url: jdbc:postgresql://localhost:5433/ticketing
+    username: ticketing
+    # 로컬 실험 환경 전제. 외부에 노출되는 환경에서는 환경변수로 빼야 한다.
+    password: ticketing
+    hikari:
+      # 가상 스레드는 얼마든지 늘어나지만 커넥션 풀은 안 늘어난다 — 풀 크기가 곧 DB 동시성 상한이다.
+      # 로그인은 1인당 1회이고 활성 정원(queue.capacity)이 이미 상한이라 10이면 넉넉하다.
+      # 여기서 병목이 보인다면 풀을 키우기 전에 왜 커넥션을 오래 쥐고 있는지부터 봐야 한다.
+      maximum-pool-size: 10
+
+server:
+  servlet:
+    session:
+      # 로그인 후에는 queue.reservation-ttl(3분)이 항상 먼저 끝나므로 이 값이 실제로
+      # 로그인을 끊는 일은 없다. 여기서 하는 일은 "입장권도 세션도 남았는데 아무도 쓰지 않는"
+      # 상태를 유한하게 만드는 것뿐이라, active 슬롯보다 넉넉하게 잡아 둔다.
+      #
+      # 입장권이 먼저 죽는 방향이 의도한 방향이다 — 정원 회수가 로그인 유지보다 우선이다.
+      # 그리고 입장권이 죽어 랜딩으로 튕길 때 AdmissionGuard가 세션도 함께 무효화한다.
+      timeout: 10m
+
+      # 쿠키로만 세션을 추적한다. 기본값(cookie,url)이면 아직 쿠키를 안 돌려준 클라이언트에게
+      # 톰캣이 URL에 ';jsessionid=...'를 붙여 준다. 로그인 직후 리다이렉트가 딱 그 경우라,
+      # 세션 ID가 Location 헤더에 그대로 실려 브라우저 기록·Referer·접근 로그에 남는다.
+      # 세션 ID는 곧 로그인 자격이므로 URL에 실려서는 안 된다.
+      tracking-modes: cookie
+
+      cookie:
+        http-only: true
+        # Spring Security를 쓰지 않아 CSRF 토큰이 없다. 크로스 사이트 POST에 세션 쿠키가
+        # 실리지 않게 하는 것으로 대신한다. 토큰의 완전한 대체는 아니다 — README의 한계 항목.
+        same-site: lax
+
 # 입장 제어. 기본값을 코드에 두지 않았으므로 이 블록이 없으면 기동에 실패한다.
 queue:
   # 동시에 로그인·예약할 수 있는 인원. 뒷단이 감당할 수 있는 수를 여기에 적는다.
@@ -27,8 +62,19 @@ queue:
   # 짧을수록 유령 회수는 빨라지고, 딴 탭에 있던 정상 사용자가 자리를 잃을 위험은 커진다.
   admission-grace: 150s
 
-  # 입장 확정 후 활성으로 유지되는 시간. 로그인하고 예약을 마치기에 충분해야 한다.
+  # 입장 확정 후 로그인까지 주는 시간. 예약할 시간은 여기에 포함되지 않는다 —
+  # 로그인에 성공하는 순간 만료가 reservation-ttl로 다시 찍히기 때문이다.
   session-ttl: 10m
+
+  # 로그인 후 예약에 주는 시간. 이 시간이 지나면 활성 슬롯이 회수되고,
+  # 다음 요청에서 AdmissionGuard가 랜딩으로 돌려보낸다.
+  #
+  # 이 값이 곧 정원(capacity)의 회전 주기다. 짧을수록 뒷사람의 대기가 줄고,
+  # 길수록 예약 중에 시간이 끊길 위험이 준다.
+  #
+  # 설계값은 3분이지만 만료를 눈으로 확인하기 쉽게 1분으로 낮춰 둔다.
+  # 화면 문구도 이 값을 그대로 읽으므로, 되돌릴 때 고칠 곳은 여기뿐이다.
+  reservation-ttl: 1m
 
 management:
   endpoint:

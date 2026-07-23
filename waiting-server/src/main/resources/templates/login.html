@@ -6,54 +6,65 @@
     <title>로그인 · 명절열차</title>
     <link rel="stylesheet" th:href="@{/css/main.css}">
 </head>
-<body>
+<body class="auth-body">
 
-<header class="site-header">
-    <div class="container header-inner">
-        <a class="wordmark" href="/">
-            <span class="wordmark-mark">명절</span><span class="wordmark-rest">열차</span>
-        </a>
+<main class="auth-page">
+
+    <div class="auth-head">
+        <div th:replace="~{fragments/brand :: logo(null)}"></div>
+        <a class="auth-back" href="/">메인화면으로</a>
     </div>
-</header>
 
-<main>
+    <div class="auth-box">
 
-    <section class="hero">
-        <div class="container">
-            <p class="hero-eyebrow">대기열 통과</p>
-            <h1 class="hero-title">입장하셨습니다</h1>
-            <p class="hero-desc">이 화면부터는 대기 없이 이용하실 수 있습니다.</p>
-        </div>
-    </section>
+        <!--
+          이 화면에 도달했다는 것 자체가 pass 쿠키 검증(AdmissionGuard)을 통과했다는 뜻이다.
+          POST도 같은 게이트를 거친다 — GET에만 걸면 폼을 직접 쏘는 것으로 우회된다.
+        -->
+        <form class="auth-form" method="post" th:action="@{/login}">
 
-    <!--
-      자리표시자다. 로그인 폼도, pass 쿠키 검증도 아직 없다 — 다음 페이즈의 몫이다.
-      지금 이 화면의 쓸모는 하나뿐이다: 대기 팝업에서 여기까지 실제로 이어지는지,
-      그리고 페이지를 옮겨도 pass 쿠키가 살아남는지 눈으로 확인시켜 주는 것.
-      (devtools → Application → Cookies)
-    -->
-    <section class="section">
-        <div class="container">
-            <h2 class="section-title">로그인</h2>
-            <ul class="notice-list">
-                <li>로그인 화면은 <strong>다음 페이즈에서 구현</strong>합니다. 지금은 입장에 성공했는지 확인하는 자리표시자입니다.</li>
-                <li>입장 자격은 <code>pass</code> 쿠키에 담겨 있습니다. 대기 토큰과 달리 새로고침해도 유지됩니다.</li>
-                <li>활성 유지 시간이 지나면 자리가 회수되며, 다시 대기열을 거쳐야 합니다.</li>
-            </ul>
-            <p><a href="/">처음으로</a></p>
-        </div>
-    </section>
+            <!--
+              오류 문구는 격자 밖에 둔다. 안에 넣으면 뜰 때마다 줄이 하나 늘어
+              두 줄에 걸친 로그인 버튼의 자리가 밀린다.
+            -->
+            <p class="form-error" role="alert" th:if="${error}" th:text="${error}"></p>
+
+            <div class="auth-fields">
+
+                <label class="auth-label" for="loginId">아이디</label>
+                <input class="auth-input" type="text" id="loginId" name="loginId"
+                       th:value="${loginId}"
+                       autocomplete="username" required autofocus>
+
+                <!-- 두 줄에 걸치는 버튼이다. 자리는 CSS(grid-row)가 잡는다. -->
+                <button type="submit" class="auth-submit">로그인</button>
+
+                <label class="auth-label" for="password">비밀번호</label>
+                <!-- 실패해도 값을 되돌려 놓지 않는다. 브라우저 기록·캐시에 남을 이유를 만들지 않는다. -->
+                <input class="auth-input" type="password" id="password" name="password"
+                       autocomplete="current-password" required>
+
+            </div>
+
+        </form>
+
+        <hr class="auth-divider">
+
+        <ul class="auth-notes">
+            <li>시연용 계정 <b>test01 / test1234!</b> 로 로그인할 수 있습니다. 회원가입은 아직 구현하지 않았습니다.</li>
+            <li>새로고침(F5), 즐겨찾기, 주소입력 등으로 로그인 화면에 접속할 수 없습니다.</li>
+        </ul>
+
+    </div>
+
+    <p class="auth-copy">Copyright ⓒ 명절열차 All Rights reserved.</p>
+
+    <p class="auth-note">
+        대규모 트래픽과 동시성 제어를 연습하기 위한 <strong>학습용 프로젝트</strong>입니다.
+        실제 승차권을 판매하지 않으며, 어떤 실제 기관과도 관련이 없습니다.
+    </p>
 
 </main>
-
-<footer class="site-footer">
-    <div class="container">
-        <p class="footer-note">
-            대규모 트래픽과 동시성 제어를 연습하기 위한 <strong>학습용 프로젝트</strong>입니다.
-            실제 승차권을 판매하지 않으며, 어떤 실제 기관과도 관련이 없습니다.
-        </p>
-    </div>
-</footer>
 
 </body>
 </html>
