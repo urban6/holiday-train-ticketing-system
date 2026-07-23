@@ -15,7 +15,8 @@
 //   docker exec redis redis-cli ZCARD waiting:holiday:$(TZ=Asia/Seoul date +%Y%m%d)
 //
 // 다시 돌리기 전 초기화 (TTL이 내일 자정까지라 그냥 두면 계속 누적된다):
-//   docker exec redis redis-cli --scan --pattern 'waiting:holiday:*' \
+//   (active 키까지 지워야 하므로 패턴이 'waiting:'이 아니다)
+//   docker exec redis redis-cli --scan --pattern '*:holiday:*' \
 //     | xargs -n1 docker exec redis redis-cli UNLINK
 
 import http from 'k6/http';
