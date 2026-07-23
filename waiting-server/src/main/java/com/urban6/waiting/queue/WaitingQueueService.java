@@ -3,7 +3,6 @@ package com.urban6.waiting.queue;
 import com.urban6.waiting.queue.WaitingQueueRepository.Promotion;
 import com.urban6.waiting.queue.WaitingQueueRepository.Snapshot;
 import java.time.Clock;
-import java.time.Duration;
 import java.util.OptionalLong;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -14,9 +13,6 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 @Slf4j
 public class WaitingQueueService {
-
-    private static final Duration WAITING_GRACE = Duration.ofHours(1);
-    private static final Duration SEQ_GRACE = Duration.ofHours(12);
 
     private final WaitingQueueRepository repository;
     private final DailyWindow dailyWindow;
@@ -29,8 +25,8 @@ public class WaitingQueueService {
         String uuid = UUID.randomUUID().toString();
 
         long seq = repository.enqueue(window.windowId(), uuid,
-                window.closeAt().plus(WAITING_GRACE),
-                window.closeAt().plus(SEQ_GRACE));
+                window.waitingDeadline(),
+                window.seqDeadline());
 
         // log.debug("대기열 진입. window={}, seq={}", window.windowId(), seq);
         return new Ticket(uuid, window.windowId(), seq);
@@ -131,7 +127,7 @@ public class WaitingQueueService {
         DailyWindow.Window window = dailyWindow.at(clock.instant());
 
         return repository.promote(window.windowId(), clock.millis(), properties,
-                window.closeAt().plus(WAITING_GRACE));
+                window.waitingDeadline());
     }
 
     public record Ticket(String token, String windowId, long seq) {}

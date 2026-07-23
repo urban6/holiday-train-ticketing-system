@@ -16,6 +16,12 @@ logging:
     #  되살려도 부하 테스트가 오염되지 않도록 여기서 한 번 더 막는다.)
     com.urban6.waiting: warn
 
+queue:
+  demo:
+    # 시연용 시드는 끈다. 봇 회수 스케줄러가 200ms마다 active를 훑으므로
+    # 켜 두면 측정 대상이 대기열이 아니라 봇 청소가 된다.
+    enabled: false
+
 spring:
   data:
     redis:

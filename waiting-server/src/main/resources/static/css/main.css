@@ -906,6 +906,137 @@ a {
     outline-offset: 2px;
 }
 
+/* --- 시연용 시드 패널 --- */
+
+/*
+ * ?demo로 들어왔을 때만 렌더링되는 개발용 도구다. 화면의 일부처럼 보이면 안 되므로
+ * 랜딩의 한지 톤(--color-paper)을 쓰지 않고 회색조로 띄워 둔다.
+ * 우하단 고정이라 승차권 카드나 예매일정을 가리지 않는다.
+ */
+.demo-panel {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    z-index: 50;
+    width: 236px;
+    padding: 14px 16px 16px;
+    border: 1px solid var(--color-slate);
+    border-radius: var(--radius);
+    background: #ffffff;
+    box-shadow: 0 6px 20px rgba(43, 39, 36, 0.16);
+    font-size: 13px;
+    color: var(--color-slate-dark);
+}
+
+.demo-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 10px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--color-text);
+}
+
+.demo-tag {
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--color-slate-dark);
+    color: #ffffff;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.demo-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.demo-label {
+    flex: none;
+    color: var(--color-text-muted);
+}
+
+.demo-input {
+    /* min-width를 지우지 않으면 number 입력이 flex 안에서 줄어들지 않아 버튼을 밀어낸다. */
+    min-width: 0;
+    flex: 1;
+    padding: 6px 8px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font: inherit;
+    text-align: right;
+}
+
+.demo-button {
+    flex: none;
+    padding: 6px 10px;
+    border: 1px solid var(--color-slate-dark);
+    border-radius: 6px;
+    background: var(--color-slate-dark);
+    color: #ffffff;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.demo-button:hover {
+    background: var(--color-text);
+    border-color: var(--color-text);
+}
+
+/* 요청이 도는 동안 JS가 잠근다. 시드와 비우기가 겹치면 결과가 순서에 따라 달라진다. */
+.demo-button:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+/* 되돌릴 수 없는 초기화라 채우기와 같은 무게로 보이면 안 된다. */
+.demo-button--ghost {
+    display: block;
+    width: 100%;
+    margin-top: 10px;
+    background: transparent;
+    border-color: var(--color-border);
+    color: var(--color-text-muted);
+    font-weight: 500;
+}
+
+.demo-button--ghost:hover {
+    background: var(--color-surface);
+    border-color: var(--color-slate);
+    color: var(--color-text);
+}
+
+.demo-counts {
+    margin: 10px 0 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.demo-counts strong {
+    color: var(--color-text);
+}
+
+.demo-message {
+    /* 문구가 비어 있을 때도 자리를 잡아 둔다. 없으면 메시지가 뜰 때마다 패널 높이가 튄다. */
+    min-height: 17px;
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: var(--color-text-muted);
+}
+
+/* 좁은 화면에서는 고정 폭이 본문을 덮는다. 아래쪽 전체 폭 띠로 바꾼다. */
+@media (max-width: 640px) {
+    .demo-panel {
+        right: 12px;
+        left: 12px;
+        bottom: 12px;
+        width: auto;
+    }
+}
+
 /* --- 반응형 --- */
 
 /* 두 단이 나란히 들어가지 않는 폭. 예매일정 → 승차권 순으로 쌓는다. */
