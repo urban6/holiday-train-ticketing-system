@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>로그인 · 명절열차</title>
+    <link rel="stylesheet" th:href="@{/css/main.css}">
+</head>
+<body>
+
+<header class="site-header">
+    <div class="container header-inner">
+        <a class="wordmark" href="/">
+            <span class="wordmark-mark">명절</span><span class="wordmark-rest">열차</span>
+        </a>
+    </div>
+</header>
+
+<main>
+
+    <section class="hero">
+        <div class="container">
+            <p class="hero-eyebrow">대기열 통과</p>
+            <h1 class="hero-title">입장하셨습니다</h1>
+            <p class="hero-desc">이 화면부터는 대기 없이 이용하실 수 있습니다.</p>
+        </div>
+    </section>
+
+    <!--
+      자리표시자다. 로그인 폼도, pass 쿠키 검증도 아직 없다 — 다음 페이즈의 몫이다.
+      지금 이 화면의 쓸모는 하나뿐이다: 대기 팝업에서 여기까지 실제로 이어지는지,
+      그리고 페이지를 옮겨도 pass 쿠키가 살아남는지 눈으로 확인시켜 주는 것.
+      (devtools → Application → Cookies)
+    -->
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title">로그인</h2>
+            <ul class="notice-list">
+                <li>로그인 화면은 <strong>다음 페이즈에서 구현</strong>합니다. 지금은 입장에 성공했는지 확인하는 자리표시자입니다.</li>
+                <li>입장 자격은 <code>pass</code> 쿠키에 담겨 있습니다. 대기 토큰과 달리 새로고침해도 유지됩니다.</li>
+                <li>활성 유지 시간이 지나면 자리가 회수되며, 다시 대기열을 거쳐야 합니다.</li>
+            </ul>
+            <p><a href="/">처음으로</a></p>
+        </div>
+    </section>
+
+</main>
+
+<footer class="site-footer">
+    <div class="container">
+        <p class="footer-note">
+            대규모 트래픽과 동시성 제어를 연습하기 위한 <strong>학습용 프로젝트</strong>입니다.
+            실제 승차권을 판매하지 않으며, 어떤 실제 기관과도 관련이 없습니다.
+        </p>
+    </div>
+</footer>
+
+</body>
+</html>
