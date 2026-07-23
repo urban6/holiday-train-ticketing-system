@@ -15,6 +15,12 @@
     --color-accent-dark: #8e3524;
     --color-accent-soft: #fdf3ef;
 
+    /* 대기 팝업 전용. 랜딩의 적갈색과 일부러 구분한다 —
+       "지금은 예매 화면이 아니라 대기 중"이라는 신호. */
+    --color-queue: #3b4ce8;
+    --color-queue-dark: #2f3fd0;
+    --color-queue-track: #e8e9ef;
+
     --radius: 10px;
     --container: 960px;
 }
@@ -35,6 +41,21 @@ body {
     font-size: 16px;
     line-height: 1.7;
     word-break: keep-all;
+
+    /* 대기 화면은 랜딩보다 짧아서, 이게 없으면 푸터가 화면 중간에 뜬다. */
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+#landing {
+    flex: 1;
 }
 
 a {
@@ -169,20 +190,38 @@ a {
 
 /* --- CTA --- */
 
+/* button 요소다. 폰트와 색은 상속되지 않으므로 직접 되돌린다. */
 .cta {
     display: block;
+    width: 100%;
     max-width: 420px;
     margin: 0 auto;
     padding: 26px 24px;
     border-radius: var(--radius);
     border: 1px solid transparent;
     text-align: center;
+    font-family: inherit;
+    color: inherit;
+    cursor: pointer;
     transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
-.cta:hover {
+.cta:hover:not(:disabled) {
     transform: translateY(-2px);
     box-shadow: 0 6px 20px rgba(43, 39, 36, 0.1);
+}
+
+.cta:disabled {
+    cursor: progress;
+    opacity: 0.6;
+}
+
+.cta-error {
+    max-width: 420px;
+    margin: 14px auto 0;
+    font-size: 14px;
+    text-align: center;
+    color: var(--color-accent-dark);
 }
 
 .cta-label {
@@ -268,9 +307,156 @@ a {
     color: var(--color-text-muted);
 }
 
+/* --- 대기 팝업 --- */
+
+.qmodal {
+    width: calc(100% - 40px);
+    max-width: 420px;
+    padding: 36px 28px 24px;
+    border: 0;
+    border-radius: 14px;
+    background: var(--color-bg);
+    color: var(--color-text);
+    text-align: center;
+    box-shadow: 0 18px 50px rgba(43, 39, 36, 0.22);
+}
+
+.qmodal::backdrop {
+    background: rgba(24, 21, 19, 0.5);
+}
+
+.qmodal-brand {
+    margin: 0 0 22px;
+    font-size: 24px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    color: var(--color-queue);
+}
+
+.qmodal-brand-rest {
+    color: var(--color-text);
+}
+
+.qmodal-notice {
+    margin: 0 0 14px;
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--color-text-muted);
+}
+
+.qmodal-label {
+    margin: 26px 0 2px;
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.qmodal-number {
+    margin: 0 0 18px;
+    font-size: 48px;
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+    color: var(--color-queue);
+    /* 숫자가 바뀔 때 폭이 흔들리지 않게 고정폭 숫자를 쓴다. */
+    font-variant-numeric: tabular-nums;
+}
+
+/*
+ * 진행률이 아니다. 입장 제어가 없어 앞사람이 줄지 않으므로 잴 진행률 자체가 없다.
+ * 대기 중이라는 신호만 주는 장식이고, 정확한 수치는 위아래 숫자가 맡는다.
+ */
+.qmodal-progress {
+    position: relative;
+    height: 10px;
+    margin-bottom: 18px;
+    border-radius: 999px;
+    background: var(--color-queue-track);
+    overflow: hidden;
+}
+
+.qmodal-progress-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 17.5%;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--color-queue);
+    animation: qmodal-slide 1.6s ease-in-out infinite alternate;
+}
+
+/* translateX의 %는 트랙이 아니라 조각 자기 너비 기준이다.
+   조각이 트랙의 17.5%이므로 남은 82.5%를 가려면 82.5 / 17.5 = 471.43%를 밀어야
+   오른쪽 끝에 정확히 닿는다. 조각 너비를 바꾸면 이 값도 같이 고쳐야 한다.
+
+   alternate가 되돌아오는 구간을 만들어 주므로 키프레임은 편도만 적으면 된다.
+   left가 아니라 transform이라 매 프레임 레이아웃을 다시 잡지 않는다. */
+@keyframes qmodal-slide {
+    from { transform: translateX(0); }
+    to   { transform: translateX(471.43%); }
+}
+
+/* 끝없이 움직이는 요소는 전정기관이 예민한 사용자에게 실제로 불편을 준다. */
+@media (prefers-reduced-motion: reduce) {
+    .qmodal-progress-fill {
+        animation: none;
+        width: 100%;
+        opacity: 0.35;
+    }
+}
+
+.qmodal-behind {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.qmodal-behind strong {
+    color: var(--color-queue);
+    font-variant-numeric: tabular-nums;
+}
+
+.qmodal-status {
+    margin: 10px 0 0;
+    min-height: 1.7em;
+    font-size: 14px;
+    color: var(--color-text-muted);
+}
+
+.qmodal-close {
+    width: 100%;
+    margin-top: 18px;
+    padding: 15px 20px;
+    border: 0;
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    color: var(--color-text-muted);
+    font-family: inherit;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+.qmodal-close:hover {
+    background: var(--color-border);
+}
+
+/* 키보드로 탭해서 올 때만 링을 보인다. */
+.qmodal-close:focus-visible {
+    outline: 2px solid var(--color-queue);
+    outline-offset: 2px;
+}
+
 /* --- 반응형 --- */
 
 @media (max-width: 640px) {
+    .qmodal {
+        padding: 28px 20px 20px;
+    }
+
+    .qmodal-number {
+        font-size: 40px;
+    }
+
     .hero {
         padding: 44px 0 40px;
     }

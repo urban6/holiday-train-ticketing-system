@@ -29,6 +29,8 @@
 
 <main>
 
+<div id="landing">
+
     <section class="hero">
         <div class="container">
             <p class="hero-eyebrow">명절 승차권 예약</p>
@@ -39,10 +41,11 @@
 
     <section class="section section--cta">
         <div class="container">
-            <a class="cta cta--primary" href="#">
+            <button type="button" id="enqueue-btn" class="cta cta--primary">
                 <span class="cta-label">명절 승차권 예약</span>
                 <span class="cta-desc">회원만 예약할 수 있습니다. 장애인·국가유공자는 사전 등록 후 이용해 주세요.</span>
-            </a>
+            </button>
+            <p class="cta-error" id="enqueue-error" role="alert" hidden></p>
         </div>
     </section>
 
@@ -63,13 +66,48 @@
             <h2 class="section-title">예약 유의사항</h2>
             <ul class="notice-list">
                 <li>예약 화면은 <strong>하나의 인터넷 창에서만</strong> 접속할 수 있습니다. 여러 창에서 동시에 접속하면 대기 순번이 초기화될 수 있습니다.</li>
-                <li>접속자가 많은 시간에는 대기열을 통해 순서대로 입장하게 됩니다. 새로고침을 반복해도 순번은 앞당겨지지 않습니다.</li>
+                <li>접속자가 많은 시간에는 대기열을 통해 순서대로 입장하게 됩니다. <strong>새로고침하거나 대기 창을 닫으면 순번이 사라져</strong> 처음부터 다시 받아야 합니다.</li>
                 <li>결제까지 마쳐야 예약이 확정됩니다. 좌석 선점 상태로 일정 시간이 지나면 자동으로 해제됩니다.</li>
             </ul>
         </div>
     </section>
 
+</div>
+
 </main>
+
+<dialog id="waiting-dialog" class="qmodal" aria-labelledby="qmodal-heading">
+
+    <p class="qmodal-brand">명절<span class="qmodal-brand-rest">열차</span></p>
+
+    <!--
+      showModal()은 첫 포커스 가능 요소를 잡는다. 그대로 두면 '닫기'에 포커스 링이 걸려
+      "닫으라"는 화면처럼 보인다. 제목에 초기 포커스를 줘서 링을 없애고,
+      스크린리더에도 팝업의 용도가 먼저 읽히게 한다.
+    -->
+    <h2 id="qmodal-heading" class="sr-only" tabindex="-1" autofocus>대기 순서 안내</h2>
+
+    <p class="qmodal-notice">대기화면을 켜진 상태로 유지하여 주십시오. 창을 닫거나 새로고침하면 대기순서가 다시 부여됩니다.</p>
+    <p class="qmodal-notice">닫기 버튼을 누르면 대기순서가 다시 부여됩니다.</p>
+
+    <p class="qmodal-label">나의 대기 순서</p>
+    <p class="qmodal-number" id="waiting-position" aria-live="polite">-</p>
+
+    <!--
+      값을 나타내지 않는 장식이다. 상태는 위의 대기 순서와 아래의 대기자 수가 전하므로
+      role="progressbar"를 달면 읽을 값도 없이 진행률이 있는 척하게 된다.
+    -->
+    <div class="qmodal-progress" aria-hidden="true">
+        <span class="qmodal-progress-fill"></span>
+    </div>
+
+    <p class="qmodal-behind">내 뒤의 대기자 수 <strong id="waiting-behind">-</strong></p>
+
+    <p class="qmodal-status" id="waiting-status" role="status"></p>
+
+    <button type="button" class="qmodal-close" id="waiting-close">닫기</button>
+
+</dialog>
 
 <footer class="site-footer">
     <div class="container">
@@ -79,6 +117,8 @@
         </p>
     </div>
 </footer>
+
+<script th:src="@{/js/waiting.js}" defer></script>
 
 </body>
 </html>
