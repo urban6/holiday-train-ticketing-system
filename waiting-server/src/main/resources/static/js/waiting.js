@@ -17,11 +17,20 @@
 (function () {
     'use strict';
 
-    const POLL_INTERVAL_MS = 2000;
-    const POLL_BACKOFF_MAX_MS = 8000;
+    const POLL_INTERVAL_MS = 5000;
+    const POLL_BACKOFF_MAX_MS = 20000;
+
+    // 정각에 버튼이 열리는 시나리오에서는 수많은 사용자가 같은 순간에 진입에 성공해,
+    // 첫 조회부터 위상이 겹친 채로 폴링을 반복하게 된다. 그러면 그 뒤로도 계속
+    // 같은 위상을 유지하며 폴링 주기마다 요청이 파도처럼 몰린다.
+    // 첫 폴링과 매 주기에 무작위 지터를 더해 위상을 흩어 놓는다. 순번 계산(POST 시점)에는
+    // 영향이 없다 — 순번은 Redis ZSet 진입 순서로만 정해지고, 지터는 조회 시점에만 붙는다.
+    const POLL_JITTER_MS = 1250;
 
     // Redis가 죽으면 서버는 에러를 주는 게 아니라 그냥 매달린다(기본 타임아웃 60초).
     // 클라이언트가 먼저 끊지 않으면 버튼이 잠긴 채 아무 안내도 못 준다.
+    // POLL_INTERVAL_MS와 값이 같은 건 우연이다 — fetch abort 타임아웃과 폴링 주기는
+    // 독립적인 상수이므로 한쪽만 따로 바꿔도 된다.
     const ENQUEUE_TIMEOUT_MS = 10000;
     const STATUS_TIMEOUT_MS = 5000;
     const CLAIM_TIMEOUT_MS = 5000;
@@ -57,7 +66,7 @@
     dialog.addEventListener('close', leaveQueue);
 
     // 브라우저가 비활성 탭의 타이머를 강하게 늦추므로, 돌아왔다는 신호(visibilitychange)가
-    // 다음 예약된 타이머를 기다리는 것보다 빠르다. 입장권 grace(60초)를 놓치는 가장 흔한
+    // 다음 예약된 타이머를 기다리는 것보다 빠르다. 입장권 grace(150초)를 놓치는 가장 흔한
     // 원인이 이 지연이라 탭이 보이는 즉시 폴링을 재개한다.
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible' && ticket && !inFlight) {
@@ -104,8 +113,10 @@
         resetFigures();
         dialog.showModal();
 
-        pollDelay = POLL_INTERVAL_MS;
-        poll();
+        // 진입은 몰려도(POST) 첫 조회는 몰리지 않게, 0~POLL_INTERVAL_MS 구간에서
+        // 무작위로 골라 첫 요청부터 위상을 흩어 놓는다.
+        pollDelay = Math.random() * POLL_INTERVAL_MS;
+        timer = setTimeout(poll, pollDelay);
     }
 
     /*
@@ -159,7 +170,7 @@
 
             render(body);
 
-            pollDelay = POLL_INTERVAL_MS;
+            pollDelay = jitteredDelay(POLL_INTERVAL_MS, POLL_JITTER_MS);
             timer = setTimeout(poll, pollDelay);
         } finally {
             inFlight = false;
@@ -225,10 +236,20 @@
 
     // 조회 실패로 폴링을 멈추면 순번이 굳은 채로 남는다.
     // 간격만 늘려 재시도하고, 성공하면 원래 주기로 돌아간다.
+    //
+    // 장애(예: Redis 순단)는 보통 다수 클라이언트에 동시에 영향을 준다.
+    // 배수 증가만 있으면 모두 같은 시점에 실패해 같은 배수로 물러나므로,
+    // 복구된 순간 재시도가 다시 한꺼번에 몰린다. 상한(capped)은 그대로 배수로 늘리되,
+    // 실제 대기 시간은 "절반 고정 + 절반 무작위"로 흩어 재시도가 몰리는 걸 막는다.
     function retryLater(message) {
         status.textContent = message;
-        pollDelay = Math.min(pollDelay * 2, POLL_BACKOFF_MAX_MS);
-        timer = setTimeout(poll, pollDelay);
+        // 첫 폴링은 지터로 인해 pollDelay가 아주 작을 수 있다(0~POLL_INTERVAL_MS).
+        // 거기서 바로 실패하면 배수 증가의 기준값이 작아 백오프가 사실상 없는 셈이 되므로,
+        // 최소 기준을 POLL_INTERVAL_MS로 둔다.
+        const capped = Math.min(Math.max(pollDelay, POLL_INTERVAL_MS) * 2, POLL_BACKOFF_MAX_MS);
+        pollDelay = capped;
+        const delay = capped / 2 + Math.random() * (capped / 2);
+        timer = setTimeout(poll, delay);
     }
 
     function showEnqueueError(message) {
@@ -251,5 +272,10 @@
 
     function format(n) {
         return Number(n).toLocaleString('ko-KR');
+    }
+
+    // base ± spread 균등분포. 폴링 위상을 계속 흔들어 재동기화를 막는다.
+    function jitteredDelay(base, spread) {
+        return base + (Math.random() * 2 - 1) * spread;
     }
 })();
