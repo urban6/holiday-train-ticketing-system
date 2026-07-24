@@ -5,11 +5,9 @@ import com.urban6.waiting.member.Member;
 import com.urban6.waiting.member.MemberException;
 import com.urban6.waiting.member.MemberService;
 import com.urban6.waiting.queue.QueueException;
-import com.urban6.waiting.queue.QueueProperties;
 import com.urban6.waiting.queue.WaitingQueueService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import java.time.Clock;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,8 +30,6 @@ public class AuthController {
 
     private final MemberService memberService;
     private final WaitingQueueService waitingQueueService;
-    private final QueueProperties queueProperties;
-    private final Clock clock;
 
     @GetMapping("/login")
     public String loginForm() {
@@ -79,28 +75,6 @@ public class AuthController {
 
         LoginSession.login(request, member);
         return "redirect:/reservation";
-    }
-
-    /**
-     * 다음 페이즈(좌석·예약)의 자리표시자.
-     * 지금 이 화면이 하는 일은 로그인이 실제로 걸렸는지 눈으로 확인시켜 주는 것뿐이다.
-     *
-     * <p>남은 시간은 만료 <b>시각</b>이 아니라 남은 <b>길이</b>로 내려보낸다.
-     * 절대 시각을 주면 클라이언트 시계가 틀어진 만큼 카운트다운이 통째로 어긋난다.
-     */
-    @GetMapping("/reservation")
-    public String reservation(HttpServletRequest request, Model model) {
-        // LoginGuard를 통과했으므로 반드시 있다.
-        model.addAttribute("member", LoginSession.current(request).orElseThrow());
-
-        // AdmissionGuard가 통과시키며 남긴 값이다. 여기 오는 요청은 반드시 게이트를 거친다.
-        long expiresAt = (long) request.getAttribute(AdmissionGuard.EXPIRES_AT);
-        model.addAttribute("remainingMillis", Math.max(0, expiresAt - clock.millis()));
-
-        // 안내 문구에 쓸 제한 시간. 화면에 숫자를 박아 두면 설정을 바꿀 때마다 화면이 거짓말을 한다.
-        model.addAttribute("reservationSeconds", queueProperties.reservationTtl().toSeconds());
-
-        return "reservation";
     }
 
     /**

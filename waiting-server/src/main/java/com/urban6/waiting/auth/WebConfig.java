@@ -24,10 +24,13 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         // 등록 순서가 실행 순서다. 입장권을 먼저 보고 로그인을 나중에 본다.
+        // "/reservation"(단수, 조회 화면)과 "/reservations"(복수, 예약 POST)는 서로 다른 경로다 —
+        // 앞의 패턴이 뒤를 매치하지 않으므로 둘 다 명시해야 한다. 빠뜨리면 예약 POST가 게이트를
+        // 타지 않아 입장권·로그인이 만료돼도 그대로 열린다.
         registry.addInterceptor(admissionGuard)
-                .addPathPatterns("/login", "/reservation");
+                .addPathPatterns("/login", "/reservation", "/reservations", "/reservations/*/cancel");
 
         registry.addInterceptor(loginGuard)
-                .addPathPatterns("/reservation");
+                .addPathPatterns("/reservation", "/reservations", "/reservations/*/cancel");
     }
 }

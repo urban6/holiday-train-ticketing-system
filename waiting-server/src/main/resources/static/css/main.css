@@ -1125,3 +1125,640 @@ a {
         border-right: 0;
     }
 }
+
+/* --- 예약 --- */
+
+/* 예약 결과 안내. 성공은 차분한 녹색, 실패는 로그인 오류와 같은 적갈색 계열. */
+.rsv-flash {
+    margin: 0;
+    padding: 12px 14px;
+    font-size: 15px;
+    border-radius: 3px;
+}
+
+.rsv-flash--ok {
+    color: #216e4e;
+    background: #eef7f1;
+    border: 1px solid #cfe6d8;
+}
+
+.rsv-flash--error {
+    color: var(--color-accent-dark);
+    background: var(--color-accent-soft);
+    border: 1px solid #e8d5cd;
+}
+
+/* 조회 폼. 한 줄에 여러 필드를 흘려 담고 좁아지면 접힌다. */
+.rsv-search {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 14px 18px;
+}
+
+.rsv-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    font-size: 14px;
+    color: var(--color-text-muted);
+}
+
+.rsv-field input {
+    padding: 9px 11px;
+    font-family: inherit;
+    font-size: 16px;
+    color: var(--color-text);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 3px;
+}
+
+.rsv-field input:focus {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+    background: var(--color-bg);
+}
+
+/* 좌석종류는 fieldset이라 legend가 라벨 역할을 한다. */
+.rsv-seatclass {
+    gap: 8px;
+}
+
+.rsv-seatclass legend {
+    padding: 0;
+}
+
+.rsv-seatclass label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-right: 12px;
+    color: var(--color-text);
+    font-size: 15px;
+}
+
+.rsv-submit {
+    padding: 10px 22px;
+    border: 0;
+    border-radius: 3px;
+    background: var(--color-accent);
+    color: #fff;
+    font-family: inherit;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.rsv-submit:hover {
+    background: var(--color-accent-dark);
+}
+
+/* 조회 결과 카드의 예약 버튼 */
+.rsv-book {
+    padding: 7px 16px;
+    border: 0;
+    border-radius: 3px;
+    background: var(--color-accent);
+    color: #fff;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.rsv-book:hover:not(:disabled) {
+    background: var(--color-accent-dark);
+}
+
+/* 매진 등으로 잠긴 버튼. 카운트다운 만료 시 reservation.js도 같은 disabled를 건다. */
+.rsv-book:disabled {
+    background: var(--color-border);
+    color: var(--color-text-muted);
+    cursor: not-allowed;
+}
+
+/* --- 예약 탭 + 조회 카드 (이미지 UI) --- */
+
+/* 상단 탭 바. 활성 탭은 코레일 블루 밑줄로 표시한다. */
+.rsv-tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: 28px;
+}
+
+.rsv-tab {
+    flex: 1;
+    padding: 14px 12px;
+    border: 0;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -1px;
+    background: none;
+    font-family: inherit;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--color-text-muted);
+    cursor: pointer;
+}
+
+.rsv-tab--active {
+    color: var(--color-brand);
+    border-bottom-color: var(--color-brand);
+}
+
+.rsv-panel[hidden] {
+    display: none;
+}
+
+/* 조회 카드. 세로로 구획을 쌓는다. */
+.rsv-card {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    padding: 28px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    margin-bottom: 36px;
+}
+
+/* 직통/환승: 표시만 하는 플레이스홀더 */
+.rsv-mode {
+    display: flex;
+    gap: 24px;
+}
+
+.rsv-mode label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 15px;
+    color: var(--color-text);
+}
+
+/* 출발역 / 도착역 + 스왑 */
+.rsv-od {
+    display: flex;
+    align-items: flex-end;
+    gap: 14px;
+}
+
+.rsv-od-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.rsv-od-label {
+    font-size: 14px;
+    color: var(--color-text-muted);
+}
+
+.rsv-od-box {
+    width: 100%;
+    padding: 14px 12px;
+    font-family: inherit;
+    font-size: 20px;
+    font-weight: 700;
+    text-align: center;
+    text-align-last: center;
+    color: var(--color-text);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+}
+
+.rsv-od-box:focus {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 1px;
+}
+
+.rsv-swap {
+    flex: none;
+    width: 40px;
+    height: 40px;
+    margin-bottom: 6px;
+    border: 1px solid var(--color-border);
+    border-radius: 50%;
+    background: var(--color-bg);
+    font-size: 18px;
+    color: var(--color-text-muted);
+    cursor: pointer;
+}
+
+.rsv-swap:hover {
+    color: var(--color-brand);
+    border-color: var(--color-brand-line);
+}
+
+/* 라벨 + 컨트롤 묶음 */
+.rsv-block {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.rsv-block-label {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--color-text);
+}
+
+/* 출발일 pill. 네이티브 라디오는 감추고 라벨을 pill로 그린다. */
+.rsv-dates {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.rsv-datepill {
+    cursor: pointer;
+}
+
+.rsv-datepill input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.rsv-datepill span {
+    display: inline-block;
+    padding: 9px 16px;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--color-text);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+}
+
+/* 주말·명절은 빨간 글씨. 선택되면 아래 규칙이 흰색으로 덮는다. */
+.rsv-datepill span.rsv-holiday {
+    color: #c0392b;
+}
+
+.rsv-datepill input:checked + span {
+    color: #fff;
+    background: var(--color-brand);
+    border-color: var(--color-brand);
+}
+
+.rsv-datepill input:checked + span::before {
+    content: "\2713 ";
+}
+
+.rsv-datepill input:focus-visible + span {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+}
+
+/* 출발시간 · 인원 · 열차 · 좌석 */
+.rsv-controls {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px 18px;
+}
+
+.rsv-ctrl {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.rsv-ctrl label {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--color-text);
+}
+
+.rsv-select {
+    width: 100%;
+    padding: 10px 11px;
+    font-family: inherit;
+    font-size: 16px;
+    color: var(--color-text);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+}
+
+.rsv-select:focus {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 1px;
+}
+
+.rsv-select:disabled {
+    color: var(--color-text-muted);
+    background: var(--color-surface);
+}
+
+/* 하단 버튼 행 */
+.rsv-actions {
+    display: flex;
+    justify-content: center;
+    gap: 14px;
+    margin-top: 4px;
+}
+
+.rsv-btn-primary {
+    padding: 13px 34px;
+    border: 0;
+    border-radius: 999px;
+    font-family: inherit;
+    font-size: 16px;
+    font-weight: 700;
+    color: #fff;
+    background: var(--color-brand);
+    cursor: pointer;
+}
+
+.rsv-btn-primary:hover {
+    background: var(--color-brand-line);
+}
+
+/* 패널 안 표 제목은 섹션 위쪽 여백만 준다. */
+.rsv-subtitle {
+    margin-top: 36px;
+}
+
+/* 좁은 화면: 역 행과 컨트롤 행을 접는다. */
+@media (max-width: 720px) {
+    .rsv-od {
+        flex-wrap: wrap;
+    }
+
+    .rsv-swap {
+        order: 3;
+        margin: 0 auto;
+    }
+
+    .rsv-controls {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .rsv-actions {
+        flex-direction: column;
+    }
+}
+
+/* --- 조회 결과 KTX 리스트 --- */
+
+/* 조회 조건 요약 바(코레일 상단 바 느낌). 화살표 없이 조건만 정적으로 보여 준다. */
+.rsv-result-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: center;
+    gap: 8px 18px;
+    padding: 14px 18px;
+    margin-bottom: 18px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+}
+
+.rsv-result-when {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--color-text);
+}
+
+.rsv-result-od {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--color-brand);
+}
+
+.rsv-result-meta {
+    font-size: 14px;
+    color: var(--color-text-muted);
+}
+
+/* 결과 목록. 열차 한 줄이 카드 하나다. */
+.rsv-results {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.rsv-train {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 16px 20px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-left: 4px solid var(--color-brand);
+    border-radius: var(--radius);
+}
+
+/* 좌측 KTX 배지 + 편명 */
+.rsv-train-badge {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    min-width: 76px;
+}
+
+.rsv-train-mark {
+    font-size: 15px;
+    font-weight: 800;
+    font-style: italic;
+    letter-spacing: 0.5px;
+    color: var(--color-brand);
+}
+
+.rsv-train-no {
+    font-size: 13px;
+    color: var(--color-text-muted);
+}
+
+/* 중앙 경로 · 시간 · 소요시간 */
+.rsv-train-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.rsv-train-route {
+    margin: 0 0 4px;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--color-text);
+}
+
+.rsv-train-time {
+    font-weight: 700;
+}
+
+.rsv-train-dur {
+    margin: 0;
+    font-size: 14px;
+    color: var(--color-text-muted);
+}
+
+/* 우측 운임 블록 */
+.rsv-train-fare {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    min-width: 110px;
+}
+
+.rsv-train-seat {
+    font-size: 13px;
+    color: var(--color-text-muted);
+}
+
+.rsv-train-price {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--color-text);
+}
+
+.rsv-train-point {
+    font-size: 12px;
+    font-weight: 700;
+    color: #1f8a4c;
+}
+
+/* 예약 버튼 + 잔여 */
+.rsv-train-book {
+    flex: none;
+    min-width: 72px;
+    text-align: center;
+}
+
+/* 좁은 화면: 카드를 세로로 접는다. */
+@media (max-width: 720px) {
+    .rsv-train {
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    .rsv-train-main {
+        flex-basis: 100%;
+        order: 2;
+    }
+
+    .rsv-train-fare {
+        align-items: flex-start;
+        order: 3;
+    }
+
+    .rsv-train-book {
+        order: 4;
+        margin-left: auto;
+    }
+}
+
+/* --- 예약내역 카드 --- */
+
+.rsv-history {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* 예약 한 건이 카드 하나다. 왼쪽에 열차·구간·좌석, 오른쪽에 취소 버튼. */
+.rsv-hist {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 18px 22px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-left: 4px solid var(--color-brand);
+    border-radius: var(--radius);
+}
+
+.rsv-hist-main {
+    flex: 1;
+    min-width: 0;
+}
+
+/* 편명 + 날짜 */
+.rsv-hist-top {
+    margin: 0 0 8px;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+}
+
+.rsv-hist-no {
+    font-size: 16px;
+    font-weight: 800;
+    font-style: italic;
+    letter-spacing: 0.5px;
+    color: var(--color-brand);
+}
+
+.rsv-hist-date {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--color-text);
+}
+
+.rsv-hist-route {
+    margin: 0 0 6px;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--color-text);
+}
+
+.rsv-hist-meta {
+    margin: 0;
+    font-size: 14px;
+    color: var(--color-text-muted);
+}
+
+.rsv-hist-sep {
+    margin: 0 8px;
+    color: var(--color-border);
+}
+
+/* 예약취소: 코레일 블루 아웃라인 pill */
+.rsv-hist-cancel {
+    flex: none;
+    padding: 10px 20px;
+    border: 1px solid var(--color-brand-line);
+    border-radius: 999px;
+    background: var(--color-bg);
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--color-brand);
+    cursor: pointer;
+}
+
+.rsv-hist-cancel:hover {
+    background: var(--color-brand);
+    color: #fff;
+}
+
+@media (max-width: 720px) {
+    .rsv-hist {
+        flex-wrap: wrap;
+        gap: 14px;
+    }
+
+    .rsv-hist-cancel {
+        margin-left: auto;
+    }
+}

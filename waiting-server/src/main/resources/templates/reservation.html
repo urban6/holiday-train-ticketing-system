@@ -43,45 +43,232 @@
 
 <main>
 
-    <section class="hero">
+    <!-- 예약 결과 안내. PRG 리다이렉트가 실어 온 플래시 값이라 새로고침하면 사라진다. -->
+    <section class="section" th:if="${reserveMessage != null or reserveError != null}">
         <div class="container">
-            <p class="hero-eyebrow">예약</p>
-            <h1 class="hero-title">
-                <span th:text="${member.name()}">홍길동</span>님, 환영합니다
-            </h1>
-            <p class="hero-desc">대기열과 로그인을 모두 통과하셨습니다.</p>
-
-            <!-- 카운트다운이 0에 닿는 순간 잠깐 보인다. 곧바로 랜딩으로 이동한다. -->
-            <p class="hero-alert" id="reservation-expired" role="alert" hidden>
-                예약 가능 시간이 끝났습니다. 초기 화면으로 이동합니다…
-            </p>
+            <p class="rsv-flash rsv-flash--ok" role="status"
+               th:if="${reserveMessage}" th:text="${reserveMessage}"></p>
+            <p class="rsv-flash rsv-flash--error" role="alert"
+               th:if="${reserveError}" th:text="${reserveError}"></p>
         </div>
     </section>
 
-    <!--
-      자리표시자다. 좌석 조회·선점·결제는 다음 페이즈의 몫이다.
-      지금 이 화면의 쓸모는 하나뿐이다: 대기열 → 입장 → 로그인이 실제로 하나의 사슬로
-      이어지는지, 그리고 두 자격(pass 쿠키 / 로그인 세션) 중 하나만 끊겨도 튕기는지
-      눈으로 확인시켜 주는 것.
-    -->
+    <!-- 조회 후 예약 / 예약내역 탭. 같은 /reservation 화면 안에서 JS로 전환한다. -->
     <section class="section">
         <div class="container">
-            <h2 class="section-title">다음 페이즈</h2>
-            <ul class="notice-list">
-                <li>좌석 조회·선점과 결제는 <strong>아직 구현하지 않았습니다</strong>.</li>
-                <li>이 화면은 <strong>두 가지</strong>를 모두 요구합니다 — 살아 있는 <code>pass</code> 쿠키(입장 자격)와 로그인 세션.</li>
-                <!--
-                  제한 시간을 화면에 박아 두지 않는다. queue.reservation-ttl을 바꾸는 순간
-                  카운트다운은 새 값으로 도는데 문구만 옛 값을 말하는 상태가 되기 때문이다.
-                -->
-                <li>로그인 시점부터
-                    <strong th:text="${reservationSeconds % 60 == 0
-                                       ? reservationSeconds / 60 + '분'
-                                       : reservationSeconds + '초'}">3분</strong>
-                    동안만 예약할 수 있습니다. 시간이 지나면 자리가 회수되고 로그인 상태와 무관하게 랜딩으로 돌아갑니다 — 정원 회수가 우선입니다.</li>
-                <li>위 카운트다운은 <strong>안내용</strong>입니다. 실제 판정은 요청마다 서버가 Redis의 활성 슬롯을 보고 내립니다.</li>
-            </ul>
-            <p>로그인 계정: <code th:text="${member.loginId()}">test01</code></p>
+            <div class="rsv-tabs" role="tablist" aria-label="예약 메뉴">
+                <button type="button" class="rsv-tab" id="tab-search"
+                        th:classappend="${historyTab} ? '' : 'rsv-tab--active'"
+                        role="tab" th:attr="aria-selected=${!historyTab}" aria-controls="panel-search">조회 후 예약</button>
+                <button type="button" class="rsv-tab" id="tab-history"
+                        th:classappend="${historyTab} ? 'rsv-tab--active' : ''"
+                        role="tab" th:attr="aria-selected=${historyTab}" aria-controls="panel-history">예약내역</button>
+            </div>
+
+            <!-- 패널 A: 조회 후 예약 -->
+            <div class="rsv-panel" id="panel-search" role="tabpanel" aria-labelledby="tab-search"
+                 th:hidden="${historyTab}">
+
+                <!-- 조회 카드. 열차 조회는 기존 GET /reservation 검색에 그대로 붙는다. -->
+                <form class="rsv-card" method="get" th:action="@{/reservation}">
+
+                    <!-- 직통/환승: 아직 백엔드가 없어 표시만 하는 플레이스홀더(직통 고정). -->
+                    <div class="rsv-mode" role="radiogroup" aria-label="경로 유형">
+                        <label><input type="radio" name="routeType" value="direct" checked disabled>직통</label>
+                        <label><input type="radio" name="routeType" value="transfer" disabled>환승</label>
+                    </div>
+
+                    <!-- 출발역 / 도착역. 시드에 있는 역만 고른다. 스왑 버튼은 JS로 값을 맞바꾼다. -->
+                    <div class="rsv-od">
+                        <div class="rsv-od-col">
+                            <span class="rsv-od-label">출발역</span>
+                            <select class="rsv-od-box" id="origin" name="origin" required>
+                                <option value="서울" th:selected="${origin == null or origin == '서울'}">서울</option>
+                                <option value="부산" th:selected="${origin == '부산'}">부산</option>
+                                <option value="광주" th:selected="${origin == '광주'}">광주</option>
+                            </select>
+                        </div>
+                        <button type="button" class="rsv-swap" id="rsv-swap"
+                                aria-label="출발역과 도착역 바꾸기">⇄</button>
+                        <div class="rsv-od-col">
+                            <span class="rsv-od-label">도착역</span>
+                            <select class="rsv-od-box" id="destination" name="destination" required>
+                                <option value="서울" th:selected="${destination == '서울'}">서울</option>
+                                <option value="부산" th:selected="${destination == null or destination == '부산'}">부산</option>
+                                <option value="광주" th:selected="${destination == '광주'}">광주</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- 출발일. 시드에 열차가 있는 날은 9/24뿐이라 그 pill을 기본 선택으로 둔다. -->
+                    <div class="rsv-block">
+                        <span class="rsv-block-label">출발일</span>
+                        <div class="rsv-dates">
+                            <label class="rsv-datepill">
+                                <input type="radio" name="date" value="2026-09-22"
+                                       th:checked="${date != null and date.toString() == '2026-09-22'}">
+                                <span>9/22(화)</span>
+                            </label>
+                            <label class="rsv-datepill">
+                                <input type="radio" name="date" value="2026-09-23"
+                                       th:checked="${date != null and date.toString() == '2026-09-23'}">
+                                <span>9/23(수)</span>
+                            </label>
+                            <label class="rsv-datepill">
+                                <input type="radio" name="date" value="2026-09-24"
+                                       th:checked="${date == null or date.toString() == '2026-09-24'}">
+                                <span>9/24(목)</span>
+                            </label>
+                            <label class="rsv-datepill">
+                                <input type="radio" name="date" value="2026-09-25"
+                                       th:checked="${date != null and date.toString() == '2026-09-25'}">
+                                <span class="rsv-holiday">9/25(금,추석)</span>
+                            </label>
+                            <label class="rsv-datepill">
+                                <input type="radio" name="date" value="2026-09-26"
+                                       th:checked="${date != null and date.toString() == '2026-09-26'}">
+                                <span class="rsv-holiday">9/26(토)</span>
+                            </label>
+                            <label class="rsv-datepill">
+                                <input type="radio" name="date" value="2026-09-27"
+                                       th:checked="${date != null and date.toString() == '2026-09-27'}">
+                                <span class="rsv-holiday">9/27(일)</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- 출발시간 · 인원 · 열차 · 좌석 -->
+                    <div class="rsv-controls">
+                        <div class="rsv-ctrl">
+                            <label for="time">출발시간</label>
+                            <!-- 시(00~23)만 고르고 분은 00으로 보낸다. 검색은 departure_time >= time. -->
+                            <select class="rsv-select" id="time" name="time" required>
+                                <option th:each="h : ${#numbers.sequence(0, 23)}"
+                                        th:value="${#numbers.formatInteger(h, 2) + ':00'}"
+                                        th:selected="${(time == null and h == 6) or (time != null and time.hour == h)}"
+                                        th:text="${#numbers.formatInteger(h, 2)
+                                                  + ' (' + (h < 12 ? '오전' : '오후')
+                                                  + #numbers.formatInteger(h % 12 == 0 ? 12 : h % 12, 2) + ')'}">06 (오전06)</option>
+                            </select>
+                        </div>
+                        <div class="rsv-ctrl">
+                            <label for="passengers">인원</label>
+                            <input class="rsv-select" type="number" id="passengers" name="passengers"
+                                   min="1" th:value="${passengers}" required>
+                        </div>
+                        <div class="rsv-ctrl">
+                            <label for="trainType">열차</label>
+                            <!-- KTX만 시드돼 있어 표시만 하는 플레이스홀더(비활성 → 제출 안 됨). -->
+                            <select class="rsv-select" id="trainType" disabled>
+                                <option>KTX</option>
+                            </select>
+                        </div>
+                        <div class="rsv-ctrl">
+                            <label for="seatClass">좌석</label>
+                            <select class="rsv-select" id="seatClass" name="seatClass">
+                                <!-- 첫 진입(seatClass 없음)에는 일반을 기본 선택으로 둔다. -->
+                                <option value="STANDARD"
+                                        th:selected="${seatClass == null or seatClass.name() == 'STANDARD'}">일반</option>
+                                <option value="FIRST"
+                                        th:selected="${seatClass != null and seatClass.name() == 'FIRST'}">특실</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="rsv-actions">
+                        <button type="submit" class="rsv-btn-primary">열차 조회</button>
+                    </div>
+                </form>
+
+                <!-- 조회 결과. searchResults는 조회를 한 번이라도 했을 때만 존재한다. -->
+                <div th:if="${searchResults != null}">
+                    <h2 class="section-title rsv-subtitle">조회 결과</h2>
+
+                    <!--
+                      조회 조건 요약 바(코레일 상단 바 느낌). 화살표로 날짜를 넘기는 동작은 없다 —
+                      시드에 열차가 있는 날이 한정돼 있어 정적 요약으로만 둔다.
+                    -->
+                    <div class="rsv-result-head" th:unless="${searchResults.isEmpty()}">
+                        <span class="rsv-result-when"
+                              th:text="${date} + ' ' + ${time}">2026-09-24 06:00</span>
+                        <span class="rsv-result-od"
+                              th:text="${origin} + ' → ' + ${destination}">서울 → 부산</span>
+                        <span class="rsv-result-meta"
+                              th:text="'총 ' + ${passengers} + '명 · ' + ${seatClass.label()}">총 1명 · 일반</span>
+                    </div>
+
+                    <p class="notice-list" th:if="${searchResults.isEmpty()}">조건에 맞는 열차가 없습니다.</p>
+
+                    <ul class="rsv-results" th:unless="${searchResults.isEmpty()}">
+                        <li class="rsv-train" th:each="row : ${searchResults}">
+                            <div class="rsv-train-badge">
+                                <span class="rsv-train-mark">KTX</span>
+                                <span class="rsv-train-no" th:text="${row.train().trainNo()}">KTX 101</span>
+                            </div>
+                            <div class="rsv-train-main">
+                                <p class="rsv-train-route">
+                                    <span th:text="${row.train().origin()} + ' → ' + ${row.train().destination()}">서울 → 부산</span>
+                                    <span class="rsv-train-time"
+                                          th:text="'(' + ${row.train().departureTime()} + ' ~ ' + ${row.train().arrivalTime()} + ')'">(06:00 ~ 08:40)</span>
+                                </p>
+                                <p class="rsv-train-dur"
+                                   th:text="'소요시간: ' + ${row.durationMinutes() / 60} + '시간 ' + ${row.durationMinutes() % 60} + '분'">소요시간: 2시간 40분</p>
+                            </div>
+                            <div class="rsv-train-fare">
+                                <span class="rsv-train-seat" th:text="${row.train().seatClass().label()}">일반실</span>
+                                <span class="rsv-train-price"
+                                      th:text="${#numbers.formatInteger(row.fare(), 0, 'COMMA')} + '원'">59,800원</span>
+                                <span class="rsv-train-point">5%적립</span>
+                            </div>
+                            <!-- 예약도 상태 변경이라 POST 폼이다. 조회 조건을 hidden으로 실어 PRG 후 같은 목록을 다시 본다. -->
+                            <form class="rsv-train-book" method="post" th:action="@{/reservations}">
+                                <input type="hidden" name="trainId" th:value="${row.train().trainId()}">
+                                <input type="hidden" name="seatClass" th:value="${row.train().seatClass().name()}">
+                                <input type="hidden" name="passengers" th:value="${passengers}">
+                                <input type="hidden" name="origin" th:value="${origin}">
+                                <input type="hidden" name="destination" th:value="${destination}">
+                                <input type="hidden" name="date" th:value="${date != null ? date.toString() : ''}">
+                                <input type="hidden" name="time" th:value="${time != null ? time.toString() : ''}">
+                                <button type="submit" class="rsv-book"
+                                        th:disabled="${row.train().remaining() < passengers}"
+                                        th:text="${row.train().remaining() < passengers} ? '매진' : '예약'">예약</button>
+                            </form>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- 패널 B: 예약내역 -->
+            <div class="rsv-panel" id="panel-history" role="tabpanel" aria-labelledby="tab-history"
+                 th:hidden="${!historyTab}">
+
+                <p class="notice-list" th:if="${reservations.isEmpty()}">예약내역이 없습니다.</p>
+
+                <ul class="rsv-history" th:unless="${reservations.isEmpty()}">
+                    <li class="rsv-hist" th:each="r : ${reservations}">
+                        <div class="rsv-hist-main">
+                            <p class="rsv-hist-top">
+                                <span class="rsv-hist-no" th:text="${r.trainNo()}">KTX 101</span>
+                                <span class="rsv-hist-date"
+                                      th:text="${#temporals.format(r.departureDate(), 'yyyy년 MM월 dd일(E)', T(java.util.Locale).KOREAN)}">2026년 09월 24일(목)</span>
+                            </p>
+                            <p class="rsv-hist-route"
+                               th:text="${r.origin()} + ' → ' + ${r.destination()} + ' (' + ${r.departureTime()} + ' ~ ' + ${r.arrivalTime()} + ')'">서울 → 부산 (06:00 ~ 08:40)</p>
+                            <p class="rsv-hist-meta">
+                                <span th:text="${r.seatClass().label()} + '실'">일반실</span>
+                                <span class="rsv-hist-sep">|</span>
+                                <span th:text="${r.passengerCount()} + '명'">1명</span>
+                                <span class="rsv-hist-sep">|</span>
+                                <span>일반예약</span>
+                            </p>
+                        </div>
+                        <!-- 취소도 상태 변경이라 POST 폼이다. 취소 후 view=history로 이 탭이 다시 열린다. -->
+                        <form method="post" th:action="@{/reservations/{id}/cancel(id=${r.reservationId()})}">
+                            <button type="submit" class="rsv-hist-cancel">예약취소</button>
+                        </form>
+                    </li>
+                </ul>
+            </div>
         </div>
     </section>
 

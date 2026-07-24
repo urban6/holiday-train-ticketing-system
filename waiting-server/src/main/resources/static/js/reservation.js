@@ -95,3 +95,52 @@
         return minutes + ':' + String(seconds).padStart(2, '0');
     }
 })();
+
+/*
+ * 조회 후 예약 / 예약내역 탭 전환. 같은 화면 안에서 패널만 감췄다 보였다 한다.
+ */
+(function () {
+    'use strict';
+
+    const tabs = document.querySelectorAll('.rsv-tab');
+    if (tabs.length === 0) {
+        return;
+    }
+
+    tabs.forEach((tab) => {
+        tab.addEventListener('click', () => {
+            tabs.forEach((t) => {
+                t.classList.remove('rsv-tab--active');
+                t.setAttribute('aria-selected', 'false');
+            });
+            document.querySelectorAll('.rsv-panel').forEach((p) => { p.hidden = true; });
+
+            tab.classList.add('rsv-tab--active');
+            tab.setAttribute('aria-selected', 'true');
+            const panel = document.getElementById(tab.getAttribute('aria-controls'));
+            if (panel) {
+                panel.hidden = false;
+            }
+        });
+    });
+})();
+
+/*
+ * 출발역 ↔ 도착역 스왑. 두 select의 선택값만 맞바꾼다.
+ */
+(function () {
+    'use strict';
+
+    const swap = document.getElementById('rsv-swap');
+    const origin = document.getElementById('origin');
+    const destination = document.getElementById('destination');
+    if (!swap || !origin || !destination) {
+        return;
+    }
+
+    swap.addEventListener('click', () => {
+        const tmp = origin.value;
+        origin.value = destination.value;
+        destination.value = tmp;
+    });
+})();
