@@ -730,6 +730,17 @@ a {
     border-radius: 3px;
 }
 
+/* 아이디 기억하기 체크박스 행. 격자(auth-fields) 밖 전체폭 한 줄. */
+.auth-remember {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+    font-size: 14px;
+    color: var(--color-text);
+    cursor: pointer;
+}
+
 /* 로그아웃은 POST여야 하므로 버튼이지만, 헤더에서는 다른 메뉴 링크처럼 보여야 한다. */
 .link-button {
     padding: 0;
