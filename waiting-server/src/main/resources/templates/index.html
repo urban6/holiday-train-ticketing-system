@@ -53,12 +53,49 @@
 <div id="landing" class="stage">
 
     <!--
-      달과 '추석' 글자는 장식일 뿐이라 읽을 내용이 없다.
-      스크린리더가 배경 글자를 본문 사이에 끼워 읽으면 예매일정이 끊기므로 통째로 숨긴다.
+      한지 톤 배경 그림(달·구름·산맥·학)이다. 읽을 내용이 없는 장식이라 통째로 숨긴다 —
+      스크린리더가 본문 사이에 끼워 읽으면 예매일정이 끊긴다.
+      외부 이미지를 받지 않는 규칙(main.css 상단)에 맞춰 전부 인라인 SVG로 그린다.
     -->
     <div class="stage-deco" aria-hidden="true">
-        <span class="deco-moon"></span>
-        <span class="deco-calligraphy">秋夕</span>
+
+        <!-- 승차권 카드 위를 가로지르는 학 두 마리 -->
+        <svg class="deco-cranes" viewBox="0 0 240 120" fill="none">
+            <g fill="#eef1f3" stroke="#586a72" stroke-width="1.4" stroke-linejoin="round">
+                <path d="M14 44c22-3 40 1 58-6 6-2 11-6 16-12 2-3 6-1 4 2-4 7-9 12-16 15l9 13-7 1-8-12c-16 6-38 6-59 4z"/>
+                <path d="M52 30c5-9 12-15 22-19" stroke-linecap="round"/>
+            </g>
+            <g fill="#f5f7f8" stroke="#6b7d84" stroke-width="1.2" stroke-linejoin="round" transform="translate(120 34) scale(.8)">
+                <path d="M14 44c22-3 40 1 58-6 6-2 11-6 16-12 2-3 6-1 4 2-4 7-9 12-16 15l9 13-7 1-8-12c-16 6-38 6-59 4z"/>
+                <path d="M52 30c5-9 12-15 22-19" stroke-linecap="round"/>
+            </g>
+        </svg>
+
+        <!-- 하단 한지 산수: 달 · 구름 · 겹겹의 산맥 -->
+        <svg class="deco-scenery" viewBox="0 0 1200 440" preserveAspectRatio="xMidYMax slice">
+            <defs>
+                <radialGradient id="deco-moon-grad" cx="50%" cy="45%" r="55%">
+                    <stop offset="0%" stop-color="#f6e6b0"/>
+                    <stop offset="70%" stop-color="#efd792"/>
+                    <stop offset="100%" stop-color="#e7cd85"/>
+                </radialGradient>
+            </defs>
+
+            <circle cx="600" cy="250" r="96" fill="url(#deco-moon-grad)"/>
+
+            <!-- 옅은 구름 띠 -->
+            <g fill="#ffffff" opacity="0.5">
+                <ellipse cx="470" cy="250" rx="120" ry="16"/>
+                <ellipse cx="720" cy="272" rx="150" ry="18"/>
+            </g>
+
+            <!-- 산맥: 뒤에서 앞으로 점점 진해지는 네 겹 -->
+            <path d="M0 300 C200 244 380 274 600 258 C820 242 1010 268 1200 250 L1200 440 L0 440 Z" fill="#aebfc2" opacity="0.55"/>
+            <path d="M0 342 C250 296 470 324 700 306 C900 290 1060 314 1200 300 L1200 440 L0 440 Z" fill="#8aa3a9" opacity="0.7"/>
+            <path d="M0 380 C300 340 560 364 810 352 C1000 344 1110 358 1200 352 L1200 440 L0 440 Z" fill="#6d8a92" opacity="0.8"/>
+            <path d="M0 410 C360 384 620 402 880 396 C1030 392 1130 402 1200 398 L1200 440 L0 440 Z" fill="#556f77"/>
+        </svg>
+
     </div>
 
     <div class="container container--wide board">
@@ -141,8 +178,8 @@
         </div>
 
         <nav class="quick-links" aria-label="참고 정보">
-            <a href="#"><svg class="quick-icon" aria-hidden="true"><use href="#icon-info"/></svg>공지사항</a>
-            <a href="#"><svg class="quick-icon" aria-hidden="true"><use href="#icon-guide"/></svg>명절 승차권 예약 방법</a>
+            <a href="#"><svg class="quick-icon" aria-hidden="true"><use href="#icon-info"/></svg>예매안내</a>
+            <a href="#"><svg class="quick-icon" aria-hidden="true"><use href="#icon-guide"/></svg>예매노선</a>
             <a href="#"><svg class="quick-icon" aria-hidden="true"><use href="#icon-clock"/></svg>열차시각 조회</a>
             <a href="#"><svg class="quick-icon" aria-hidden="true"><use href="#icon-seat"/></svg>잔여석현황</a>
         </nav>

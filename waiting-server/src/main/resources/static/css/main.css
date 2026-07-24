@@ -286,31 +286,24 @@ a {
     pointer-events: none;
 }
 
-.deco-moon {
+/* 하단 산수. 판 아래에 깔리고, board(z-index:1)가 그 위에 온다. */
+.deco-scenery {
     position: absolute;
-    left: 24%;
-    top: 8%;
-    width: 380px;
-    height: 380px;
-    border-radius: 50%;
-    background: radial-gradient(circle at 50% 45%,
-        rgba(255, 253, 246, 0.95),
-        rgba(255, 250, 238, 0.55) 60%,
-        rgba(255, 248, 232, 0) 72%);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: 62%;
 }
 
-.deco-calligraphy {
+/* 카드 위를 나는 학. 우측 상단, 승차권 카드 근처. */
+.deco-cranes {
     position: absolute;
-    left: 21%;
+    right: 6%;
     top: 6%;
-    font-family: "Apple SD Gothic Neo", serif;
-    font-size: 210px;
-    font-weight: 700;
-    line-height: 1;
-    letter-spacing: 0.06em;
-    color: rgba(74, 56, 42, 0.11);
-    transform: rotate(-4deg);
-    user-select: none;
+    width: 220px;
+    height: 110px;
+    opacity: 0.9;
 }
 
 .board {
@@ -1049,16 +1042,6 @@ a {
     .tickets {
         max-width: 440px;
     }
-
-    .deco-calligraphy {
-        font-size: 150px;
-    }
-
-    .deco-moon {
-        left: 40%;
-        width: 280px;
-        height: 280px;
-    }
 }
 
 @media (max-width: 640px) {
@@ -1074,10 +1057,6 @@ a {
     .quick-links a {
         padding: 15px 10px;
         font-size: 14px;
-    }
-
-    .deco-calligraphy {
-        font-size: 110px;
     }
 
     /* 3열이 들어가지 않는 폭. 라벨 아래 입력칸, 그 아래 버튼으로 쌓는다. */
