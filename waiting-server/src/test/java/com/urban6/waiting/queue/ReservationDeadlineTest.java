@@ -59,7 +59,8 @@ class ReservationDeadlineTest {
     void clearWindow() {
         String windowId = dailyWindow.at(clock.instant()).windowId();
         redis.delete(java.util.List.of(
-                QueueKeys.waiting(windowId), QueueKeys.seq(windowId), QueueKeys.active(windowId)));
+                QueueKeys.waiting(windowId), QueueKeys.seq(windowId),
+                QueueKeys.active(windowId), QueueKeys.seen(windowId)));
     }
 
     @Test

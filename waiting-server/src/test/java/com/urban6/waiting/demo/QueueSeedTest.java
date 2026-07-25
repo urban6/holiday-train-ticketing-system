@@ -47,7 +47,8 @@ class QueueSeedTest {
     @AfterEach
     void clearWindow() {
         redis.delete(List.of(
-                QueueKeys.waiting(windowId()), QueueKeys.seq(windowId()), QueueKeys.active(windowId())));
+                QueueKeys.waiting(windowId()), QueueKeys.seq(windowId()),
+                QueueKeys.active(windowId()), QueueKeys.seen(windowId())));
     }
 
     @Test
