@@ -155,6 +155,15 @@
                 return;
             }
 
+            if (res.status === 403) {
+                // 판매 종료. 순번이 더 이상 줄지 않으므로 폴링을 멈춘다 —
+                // 아래 retryLater로 흘러가면 "다시 확인하는 중…"을 영원히 반복한다.
+                const body = await readJson(res);
+                showEnqueueError(body?.message || '판매가 종료되었습니다. 다시 신청해 주세요.');
+                dialog.close();
+                return;
+            }
+
             if (!res.ok) {
                 const body = await readJson(res);
                 retryLater(body?.message || '순번을 확인하지 못했습니다. 다시 확인하는 중…');

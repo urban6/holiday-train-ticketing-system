@@ -3,6 +3,7 @@ package com.urban6.waiting.queue;
 import com.urban6.waiting.queue.WaitingQueueRepository.Promotion;
 import com.urban6.waiting.queue.WaitingQueueRepository.Snapshot;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.OptionalLong;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -20,7 +21,16 @@ public class WaitingQueueService {
     private final Clock clock;
 
     public Ticket enqueue() {
-        DailyWindow.Window window = dailyWindow.at(clock.instant());
+        Instant now = clock.instant();
+        DailyWindow.Window window = dailyWindow.at(now);
+
+        // 판매 시간 밖에서는 줄을 세우지 않는다. 개시 전에 받아 주면 밤새 줄 서기가 되고,
+        // 마감 뒤에 받아 주면 승격이 오지 않는 줄에 세우는 셈이다.
+        if (!window.isOpen(now)) {
+            throw new QueueException.Closed(
+                    "판매 시간이 아닙니다. 판매 시간은 %s ~ %s입니다."
+                            .formatted(properties.open(), properties.close()));
+        }
 
         String uuid = UUID.randomUUID().toString();
 
@@ -33,20 +43,35 @@ public class WaitingQueueService {
     }
 
     /**
-     * windowId는 서버 시계에서 다시 구하지 않고 클라이언트가 돌려보낸 값을 쓴다.
-     * 자정 직전에 진입한 사용자가 자정 직후에 조회하면 창이 달라져 자기 항목을 못 찾기 때문이다.
-     * 키 TTL이 "창 마감 + 1시간"이라 그 사이의 조회는 유효해야 한다.
+     * 조회는 서버 시계로 창을 다시 구하지 않고 클라이언트가 돌려보낸 windowId를 쓴다.
+     * 마감 직전에 진입한 사용자가 마감 직후에 조회하면 창이 달라져 자기 항목을 못 찾기 때문이다.
+     *
+     * <p>대신 그 windowId가 지금 승격이 오는 창인지는 따로 본다. 아니면 순번이 영원히 줄지 않으므로
+     * 정상 응답을 계속 주는 대신 판매 종료를 알린다.
+     *
+     * <p>판정 순서가 중요하다. 승격된 사용자는 마감 뒤에도 통과해야 한다 —
+     * 화면은 ADMITTED를 받고 나서야 입장 확정(claim)으로 넘어가므로, 여기서 막으면
+     * 슬롯을 쥔 채 입장하지 못한다.
      */
     public Status status(String windowId, String token) {
         QueueKeys.requireValidWindowId(windowId);
 
         Snapshot snapshot = repository.status(windowId, token, clock.millis());
-        if (snapshot.gone()) {
-            throw new QueueException.Expired("대기 정보를 찾을 수 없습니다.");
-        }
 
         if (snapshot.admitted()) {
             return new Status(token, windowId, State.ADMITTED, 0, 0, 0, snapshot.total());
+        }
+
+        // 입장하지 못한 채 이 창의 판매가 끝난 경우다. 승격은 판매 시간 안의 현재 창에만
+        // 오므로(promote 참고) 이 조건에서 순번은 더 이상 줄지 않는다.
+        Instant now = clock.instant();
+        DailyWindow.Window window = dailyWindow.at(now);
+        if (!windowId.equals(window.windowId()) || !window.isOpen(now)) {
+            throw new QueueException.Closed("판매가 종료되었습니다. 다시 신청해 주세요.");
+        }
+
+        if (snapshot.gone()) {
+            throw new QueueException.Expired("대기 정보를 찾을 수 없습니다.");
         }
 
         long ahead = snapshot.rank();
@@ -120,14 +145,23 @@ public class WaitingQueueService {
     }
 
     /**
-     * 서버 시계 기준 현재 창만 승격시킨다.
+     * 서버 시계 기준, 판매 시간 안의 현재 창만 승격시킨다.
      * 창이 바뀌면 이전 창 대기자는 승격되지 않고 키 TTL로 자연 소멸한다 — 창 마감 = 판매 종료.
+     *
+     * <p>마감 뒤에는 만료 회수(promote.lua의 ZREMRANGEBYSCORE)도 함께 멈춘다. 그래도 정원이
+     * 잘못 세어지지는 않는다 — 회수되지 않은 멤버는 status.lua가 score로 걸러내고,
+     * 키 자체는 activeDeadline에 사라진다.
      */
     public Promotion promote() {
-        DailyWindow.Window window = dailyWindow.at(clock.instant());
+        Instant now = clock.instant();
+        DailyWindow.Window window = dailyWindow.at(now);
+
+        if (!window.isOpen(now)) {
+            return new Promotion(0, 0, 0);
+        }
 
         return repository.promote(window.windowId(), clock.millis(), properties,
-                window.waitingDeadline());
+                window.activeDeadline());
     }
 
     public record Ticket(String token, String windowId, long seq) {}

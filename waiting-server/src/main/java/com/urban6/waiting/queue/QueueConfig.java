@@ -45,9 +45,10 @@ public class QueueConfig {
         return script;
     }
 
+    /** 존은 도메인이 한국 철도라 튜닝 대상이 아니다. 개시·마감만 설정에서 읽는다. */
     @Bean
-    public DailyWindow dailyWindow() {
-        return new DailyWindow(ZoneId.of("Asia/Seoul"));
+    public DailyWindow dailyWindow(QueueProperties properties) {
+        return new DailyWindow(ZoneId.of("Asia/Seoul"), properties.open(), properties.close());
     }
 
     @Bean
