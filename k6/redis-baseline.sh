@@ -17,7 +17,14 @@
 #   컨테이너 안  107,009 rps  (clients=100)
 #   호스트        37,908 rps  (clients=100)
 #   앱 전체       34,129 rps  (VUS=1000)
-# → 앱은 호스트 한계에 거의 붙어 있다. 병목은 Spring Boot가 아니라 Docker 네트워킹이다.
+#
+# 2026-07-26 재측정 + 네이티브 구간 추가 (같은 세션):
+#   컨테이너 안  107,238 rps
+#   호스트        36,576 rps
+#   네이티브      105,764 rps  ← Docker 밖: redis-server infra/redis/redis.conf --port 6380 --bind 127.0.0.1
+#
+# → Docker 포트 포워딩이 처리량의 66%를 먹는다. 다만 그 천장을 2.9배 열어도 앱은 6%만 올랐다.
+#   앱은 이 경로에 묶여 있지 않다 — docs/measurement.md의 "Docker 천장을 걷어내면" 참고.
 
 set -euo pipefail
 
