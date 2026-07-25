@@ -90,7 +90,10 @@ public class QueueSeeder {
         redis.unlink(List.of(
                 QueueKeys.waiting(windowId),
                 QueueKeys.seq(windowId),
-                QueueKeys.active(windowId)));
+                QueueKeys.active(windowId),
+                // 봇은 seen을 만들지 않지만 실사용자는 만든다. 빼먹으면 waiting 없이 seen 항목만
+                // 남아, 스위퍼가 stale-timeout 뒤에 이미 없는 토큰을 지우는 헛일을 한 번 한다.
+                QueueKeys.seen(windowId)));
     }
 
     private long card(String key) {

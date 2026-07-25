@@ -43,6 +43,10 @@
     let timer = null;
     let pollDelay = POLL_INTERVAL_MS;
 
+    // 입장에 성공해 다음 화면으로 넘어가는 중인지. 그 이동도 pagehide라서, 이 플래그가 없으면
+    // 방금 받은 자리를 스스로 반납하는 이탈 요청을 보내게 된다.
+    let admitted = false;
+
     // poll() 실행 중인지. visibilitychange가 이미 도는 poll()과 겹쳐 새 poll()을 또 띄우면
     // 응답이 두 번 오고, 하필 둘 다 ADMITTED면 admit()도 두 번 불릴 수 있다.
     let inFlight = false;
@@ -77,11 +81,54 @@
         }
     });
 
+    /*
+     * 탭 닫기·브라우저 종료·새로고침·다른 페이지로 이동. dialog의 close 이벤트가 오지 않는
+     * 경로라 여기서 따로 잡는다.
+     *
+     * beforeunload가 아니라 pagehide다. 전자는 모바일에서 발화하지 않는 경우가 많고
+     * bfcache를 무효화한다.
+     *
+     * visibilitychange의 hidden을 여기에 같이 걸면 안 된다. 탭 전환만으로도 hidden이 떠서
+     * 잠깐 다른 탭에 다녀온 정상 사용자를 줄에서 빼내게 된다. 이 앱은 같은 이벤트를 위에서
+     * 정반대 용도(돌아오면 폴링 즉시 재개)로 이미 쓰고 있어, 둘을 같이 걸면 서로 싸운다.
+     *
+     * 새로고침에서도 보낸다. 토큰이 메모리에만 살아 "새로고침하면 자리를 잃는다"가 원래 규칙인데,
+     * 지금까지는 규칙상 잃었는데 서버에는 그대로 남아 있었다.
+     */
+    window.addEventListener('pagehide', () => {
+        if (ticket && !admitted) {
+            sendLeave(ticket);
+        }
+    });
+
     function leaveQueue() {
         clearTimeout(timer);
         timer = null;
-        ticket = null;          // 자리를 잃는다. 서버에서 빼는 수단은 아직 없다.
+
+        // ticket이 남아 있다는 건 서버에 아직 내 자리가 있다고 믿는다는 뜻이다.
+        // 만료(404)·판매 종료(403)·입장 실패 경로는 close() 전에 ticket을 비우므로 여기서 걸러진다.
+        // 그 셋은 이미 서버에서 사라진 토큰이라 이탈 요청이 순수한 낭비인데,
+        // 하필 여러 사용자에게 동시에 터지는 상황이라 그 순간 요청이 한꺼번에 몰린다.
+        if (ticket) {
+            sendLeave(ticket);
+        }
+
+        ticket = null;
         button.disabled = false;
+    }
+
+    /*
+     * 응답을 보지 않는다. 서버는 이미 없는 토큰에도 204를 주고, 페이지가 사라지는 중이면
+     * 받을 화면도 없다.
+     *
+     * fetch가 아니라 sendBeacon인 이유는 pagehide 때문이다 — 일반 fetch는 페이지가 죽으면서
+     * 함께 취소되지만, beacon은 브라우저가 페이지 사후에 대신 보내 준다.
+     * 그래서 서버 API도 DELETE가 아니라 POST다. sendBeacon은 POST만 보낸다.
+     */
+    function sendLeave(t) {
+        const url = '/api/v1/waiting-queue/' + encodeURIComponent(t.token)
+            + '/leave?windowId=' + encodeURIComponent(t.windowId);
+        navigator.sendBeacon(url);
     }
 
     async function enqueue() {
@@ -150,6 +197,9 @@
 
             if (res.status === 404) {
                 // 정리는 close 핸들러가 맡는다. 여기서는 안내만 띄우고 닫는다.
+                // 먼저 ticket을 비우는 건 이탈 요청을 보내지 않기 위해서다 —
+                // 서버가 방금 "그런 대기 정보가 없다"고 답했으므로 지울 것도 없다.
+                ticket = null;
                 showEnqueueError('대기 정보가 만료되었습니다. 다시 신청해 주세요.');
                 dialog.close();
                 return;
@@ -158,6 +208,9 @@
             if (res.status === 403) {
                 // 판매 종료. 순번이 더 이상 줄지 않으므로 폴링을 멈춘다 —
                 // 아래 retryLater로 흘러가면 "다시 확인하는 중…"을 영원히 반복한다.
+                // 404와 같은 이유로 ticket을 먼저 비운다. 승격이 오지 않는 창이라
+                // 남은 항목은 키 TTL로 통째로 사라진다.
+                ticket = null;
                 const body = await readJson(res);
                 showEnqueueError(body?.message || '판매가 종료되었습니다. 다시 신청해 주세요.');
                 dialog.close();
@@ -220,6 +273,8 @@
         if (!res.ok) {
             // 대개 grace가 지나 자리가 회수된 경우다.
             // 정리는 다른 경로와 똑같이 close 핸들러 한 곳에 맡긴다.
+            // 이탈 요청은 보내지 않는다 — 이미 승격돼 ZPOPMIN으로 빠졌으므로 대기열에 없다.
+            ticket = null;
             showEnqueueError('입장 가능 시간이 지났습니다. 다시 신청해 주세요.');
             dialog.close();
             return;
@@ -227,6 +282,10 @@
 
         // 여기서 dialog.close()를 부르면 안 된다. close 핸들러가 leaveQueue를 돌린다.
         // 어차피 페이지를 통째로 떠나므로 팝업을 띄운 채로 넘어간다.
+        //
+        // 이 이동도 pagehide를 띄운다. 플래그를 세우지 않으면 그 핸들러가 이탈 요청을 보내
+        // 방금 받은 자리를 스스로 반납한다.
+        admitted = true;
         window.location.href = ADMITTED_URL;
     }
 

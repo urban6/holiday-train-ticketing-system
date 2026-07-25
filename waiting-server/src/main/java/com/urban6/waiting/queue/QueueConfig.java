@@ -27,6 +27,16 @@ public class QueueConfig {
     }
 
     @Bean
+    public RedisScript<Long> leaveScript() {
+        return script("redis/leave.lua", Long.class);
+    }
+
+    @Bean
+    public RedisScript<Long> sweepScript() {
+        return script("redis/sweep.lua", Long.class);
+    }
+
+    @Bean
     @SuppressWarnings("rawtypes")
     public RedisScript<List> statusScript() {
         return script("redis/status.lua", List.class);

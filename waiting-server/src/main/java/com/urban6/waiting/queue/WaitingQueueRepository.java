@@ -21,6 +21,8 @@ public class WaitingQueueRepository {
     private final StringRedisTemplate redis;
     private final RedisScript<Long> enqueueScript;
     private final RedisScript<Long> restampScript;
+    private final RedisScript<Long> leaveScript;
+    private final RedisScript<Long> sweepScript;
     @SuppressWarnings("rawtypes")
     private final RedisScript<List> statusScript;
     @SuppressWarnings("rawtypes")
@@ -30,12 +32,14 @@ public class WaitingQueueRepository {
      * 순번을 발급하고 대기열에 등록한다.
      * 두 작업은 Lua Script로 묶어서 실행한다.
      */
-    public long enqueue(String windowId, String uuid, Instant waitingDeadline, Instant seqDeadline) {
+    public long enqueue(String windowId, String uuid, long nowMillis,
+                        Instant waitingDeadline, Instant seqDeadline) {
         Long seq = execute(enqueueScript, "대기열 진입", windowId,
-                List.of(QueueKeys.waiting(windowId), QueueKeys.seq(windowId)),
+                List.of(QueueKeys.waiting(windowId), QueueKeys.seq(windowId), QueueKeys.seen(windowId)),
                 uuid,
                 millis(waitingDeadline),
-                millis(seqDeadline));
+                millis(seqDeadline),
+                String.valueOf(nowMillis));
 
         if (seq == null) {
             throw new IllegalStateException("스크립트가 seq를 반환하지 않았습니다: " + windowId);
@@ -46,11 +50,14 @@ public class WaitingQueueRepository {
     /**
      * 대기 순번과 입장 여부를 함께 읽는다.
      * 두 값 사이에 큐가 변하면 앞뒤 합이 어긋나므로 Lua Script로 묶어서 실행한다.
+     *
+     * <p>대기 중이면 seen에 지금 시각을 찍는다 — 이 조회가 곧 하트비트다.
+     * 그래서 이름과 달리 순수 읽기가 아니다. 그 대가를 치른 이유는 status.lua 주석에 있다.
      */
     @SuppressWarnings("unchecked")
     public Snapshot status(String windowId, String uuid, long nowMillis) {
         List<Long> result = execute(statusScript, "순번 조회", windowId,
-                List.of(QueueKeys.waiting(windowId), QueueKeys.active(windowId)),
+                List.of(QueueKeys.waiting(windowId), QueueKeys.active(windowId), QueueKeys.seen(windowId)),
                 uuid,
                 String.valueOf(nowMillis));
 
@@ -67,7 +74,7 @@ public class WaitingQueueRepository {
     @SuppressWarnings("unchecked")
     public Promotion promote(String windowId, long nowMillis, QueueProperties properties, Instant activeDeadline) {
         List<Long> result = execute(promoteScript, "승격", windowId,
-                List.of(QueueKeys.waiting(windowId), QueueKeys.active(windowId)),
+                List.of(QueueKeys.waiting(windowId), QueueKeys.active(windowId), QueueKeys.seen(windowId)),
                 String.valueOf(nowMillis),
                 String.valueOf(properties.capacity()),
                 String.valueOf(properties.maxBatch()),
@@ -94,6 +101,39 @@ public class WaitingQueueRepository {
                 String.valueOf(ttl.toMillis()));
 
         return restamped != null && restamped == 1L;
+    }
+
+    /**
+     * 대기열에서 뺀다. 사용자가 팝업을 닫거나 페이지를 떠난 경우다.
+     *
+     * <p>waiting과 seen 두 키에 걸치므로 Lua로 묶는다. active는 건드리지 않는다 —
+     * 이유는 leave.lua 주석에 있다.
+     *
+     * @return 실제로 뺐으면 true. 이미 없었으면 false지만 호출자는 둘 다 성공으로 다룬다.
+     */
+    public boolean leave(String windowId, String uuid) {
+        Long removed = execute(leaveScript, "대기열 이탈", windowId,
+                List.of(QueueKeys.waiting(windowId), QueueKeys.seen(windowId)),
+                uuid);
+
+        return removed != null && removed == 1L;
+    }
+
+    /**
+     * 마지막 확인이 staleBefore보다 오래된 대기자를 회수한다.
+     *
+     * <p>이탈 요청이 도달하지 못한 경우를 덮는다. 브라우저 이벤트가 아예 오지 않는 경로
+     * (크래시·기기 꺼짐·네트워크 단절)는 이것 말고 잡을 수단이 없다.
+     *
+     * @return 이번에 회수한 인원. maxSweep이 상한이다.
+     */
+    public long sweep(String windowId, long staleBeforeMillis, int maxSweep) {
+        Long swept = execute(sweepScript, "이탈 회수", windowId,
+                List.of(QueueKeys.waiting(windowId), QueueKeys.seen(windowId)),
+                String.valueOf(staleBeforeMillis),
+                String.valueOf(maxSweep));
+
+        return swept == null ? 0 : swept;
     }
 
     /**

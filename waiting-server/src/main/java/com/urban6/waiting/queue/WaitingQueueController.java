@@ -38,6 +38,26 @@ public class WaitingQueueController {
     }
 
     /**
+     * 대기열 이탈. 팝업을 닫거나 페이지를 떠날 때 클라이언트가 부른다.
+     *
+     * <p><b>DELETE가 아니라 POST인 이유는 {@code navigator.sendBeacon}이 POST만 보내기
+     * 때문이다.</b> 탭을 닫는 순간에는 일반 fetch가 페이지와 함께 취소되므로 beacon이 유일한
+     * 수단인데, DELETE로 두면 그 경로가 이 엔드포인트를 부르지 못해 같은 일을 하는 API가 둘로 갈라진다.
+     *
+     * <p>언제나 204다. 이미 없는 토큰·이미 승격된 토큰·지난 창의 토큰이 모두 정상적으로 도착한다 —
+     * 이탈 신호는 늦거나 중복으로 오는 것이 정상이고, 실패를 알려 봐야 화면은 이미 사라진 뒤다.
+     *
+     * <p>이 경로는 게이트(WebConfig 화이트리스트)를 타지 않는다. 아직 입장권이 없는 대기자가
+     * 부르는 API라 입장 자격을 요구하면 정작 필요한 사람이 쓰지 못한다.
+     */
+    @PostMapping("/{token}/leave")
+    public ResponseEntity<Void> leave(@PathVariable String token, @RequestParam String windowId) {
+        waitingQueueService.leave(windowId, token);
+
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
      * 입장 확정. 대기 토큰은 JS 메모리에만 살아서 페이지를 옮기는 순간 사라진다.
      * 여기서 쿠키로 바꿔 심어야 로그인·예약 화면까지 활성 상태가 따라간다.
      */

@@ -34,7 +34,7 @@ public class WaitingQueueService {
 
         String uuid = UUID.randomUUID().toString();
 
-        long seq = repository.enqueue(window.windowId(), uuid,
+        long seq = repository.enqueue(window.windowId(), uuid, now.toEpochMilli(),
                 window.waitingDeadline(),
                 window.seqDeadline());
 
@@ -142,6 +142,42 @@ public class WaitingQueueService {
         QueueKeys.requireValidWindowId(windowId);
 
         repository.release(windowId, token);
+    }
+
+    /**
+     * 대기열에서 스스로 빠진다. 팝업을 닫거나 페이지를 떠날 때 클라이언트가 부른다.
+     *
+     * <p>실패를 알리지 않는다. 이미 없는 토큰, 이미 승격된 토큰, 지난 창의 토큰이 모두 정상적으로
+     * 도착하기 때문이다 — 페이지 이탈 신호(pagehide)는 늦게 도착하거나 중복으로 도착할 수 있고,
+     * 그때 404를 돌려줘 봐야 화면은 이미 사라진 뒤라 받을 사람이 없다.
+     *
+     * <p>windowId가 깨진 경우만 예외로 던진다. 그건 이탈이 아니라 잘못된 요청이고,
+     * 검사 없이 넘기면 그대로 Redis 키가 된다.
+     */
+    public void leave(String windowId, String token) {
+        QueueKeys.requireValidWindowId(windowId);
+
+        repository.leave(windowId, token);
+    }
+
+    /**
+     * 폴링이 끊긴 대기자를 회수한다. 스위퍼가 주기적으로 부른다.
+     *
+     * <p>승격(promote)과 같은 조건으로 현재 창만 훑는다. 창이 닫히면 승격이 오지 않아 순번이
+     * 줄지 않고, 키도 곧 TTL로 통째로 사라지므로 회수할 이유가 없다.
+     *
+     * @return 이번 주기에 회수한 인원
+     */
+    public long sweepStale() {
+        Instant now = clock.instant();
+        DailyWindow.Window window = dailyWindow.at(now);
+
+        if (!window.isOpen(now)) {
+            return 0;
+        }
+
+        long staleBefore = now.minus(properties.staleTimeout()).toEpochMilli();
+        return repository.sweep(window.windowId(), staleBefore, properties.maxSweep());
     }
 
     /**

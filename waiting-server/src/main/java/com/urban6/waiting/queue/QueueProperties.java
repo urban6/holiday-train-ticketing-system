@@ -19,16 +19,28 @@ public record QueueProperties(
         Duration promoteInterval,
         Duration admissionGrace,
         Duration sessionTtl,
-        Duration reservationTtl
+        Duration reservationTtl,
+        Duration staleTimeout,
+        Duration sweepInterval,
+        int maxSweep
 ) {
 
     public QueueProperties {
         require(capacity > 0, "queue.capacity는 1 이상이어야 합니다: " + capacity);
         require(maxBatch > 0, "queue.max-batch는 1 이상이어야 합니다: " + maxBatch);
+        require(maxSweep > 0, "queue.max-sweep은 1 이상이어야 합니다: " + maxSweep);
         require(positive(promoteInterval), "queue.promote-interval이 없거나 0 이하입니다.");
         require(positive(admissionGrace), "queue.admission-grace가 없거나 0 이하입니다.");
         require(positive(sessionTtl), "queue.session-ttl이 없거나 0 이하입니다.");
         require(positive(reservationTtl), "queue.reservation-ttl이 없거나 0 이하입니다.");
+        require(positive(staleTimeout), "queue.stale-timeout이 없거나 0 이하입니다.");
+        require(positive(sweepInterval), "queue.sweep-interval이 없거나 0 이하입니다.");
+
+        // 스윕 주기가 stale 판정 시간보다 길면, "이탈로 본다"고 정한 시간과 실제로 빠지는 시간이
+        // 어긋난다. 판정 기준이 설정값이 아니라 주기가 되어 버리므로 값을 읽고도 동작을 예측할 수 없다.
+        require(sweepInterval.compareTo(staleTimeout) < 0,
+                "queue.sweep-interval(%s)이 queue.stale-timeout(%s) 이상입니다. 회수가 판정 기준보다 늦어집니다."
+                        .formatted(sweepInterval, staleTimeout));
 
         require(open != null && close != null, "queue.open / queue.close가 없습니다.");
         require(open.isBefore(close),
