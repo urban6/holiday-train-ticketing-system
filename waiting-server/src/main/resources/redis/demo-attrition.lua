@@ -1,5 +1,5 @@
 -- 대기 중인 봇의 이탈
--- KEYS[1] = waiting:{holiday}:{windowId}   ZSet (member=uuid, score=seq)
+-- KEYS[1] = waiting:holiday:{windowId}   ZSet (member=uuid, score=seq)
 -- ARGV[1] = count   이번 주기에 이탈시킬 인원. 무작위 값은 호출부가 정한다.
 -- return  = 실제로 제거한 수
 --

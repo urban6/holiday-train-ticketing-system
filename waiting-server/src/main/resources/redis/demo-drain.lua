@@ -1,5 +1,5 @@
 -- 승격된 봇을 활성에서 회수한다
--- KEYS[1] = active:{holiday}:{windowId}   ZSet (member=uuid, score=만료 epoch ms)
+-- KEYS[1] = active:holiday:{windowId}   ZSet (member=uuid, score=만료 epoch ms)
 -- return  = 회수한 봇 수
 --
 -- 봇은 폴링도 claim도 하지 않으므로, 그냥 두면 아무도 쓰지 않는 슬롯을

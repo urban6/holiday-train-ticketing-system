@@ -2,6 +2,22 @@ package com.urban6.waiting.queue;
 
 import java.util.regex.Pattern;
 
+/**
+ * Redis 키를 조립하는 유일한 곳. 키 리터럴이 다른 곳에 새어 나가면 안 된다.
+ *
+ * <pre>
+ * waiting:holiday:{windowId}       ZSet   member=uuid, score=seq
+ * waiting:holiday:{windowId}:seq   String 창별 단조 증가 순번 카운터
+ * active:holiday:{windowId}        ZSet   member=uuid, score=만료 epoch ms
+ * </pre>
+ *
+ * <p>{@code holiday}는 플레이스홀더가 아니라 {@link #EVENT_ID} 상수 그대로다.
+ * 변하는 부분은 {@code windowId} 하나뿐이다.
+ *
+ * <p>세 키의 접두사가 서로 달라 Redis Cluster에서는 다른 슬롯에 떨어진다.
+ * waiting과 active를 함께 넘기는 status·promote 스크립트가 CROSSSLOT으로 깨지므로,
+ * 언젠가 Cluster로 간다면 해시 태그로 묶어야 한다. 단일 노드에서는 문제되지 않는다.
+ */
 public final class QueueKeys {
 
     private QueueKeys() {}

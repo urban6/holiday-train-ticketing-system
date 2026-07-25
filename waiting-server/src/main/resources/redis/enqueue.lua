@@ -1,6 +1,6 @@
 -- 대기열 진입
--- KEYS[1] = waiting:{holiday}:{windowId}       ZSet   (member=uuid, score=seq)
--- KEYS[2] = waiting:{holiday}:{windowId}:seq   String (창별 단조 증가 시퀀스)
+-- KEYS[1] = waiting:holiday:{windowId}       ZSet   (member=uuid, score=seq)
+-- KEYS[2] = waiting:holiday:{windowId}:seq   String (창별 단조 증가 시퀀스)
 -- ARGV[1] = uuid
 -- ARGV[2] = waitingDeadlineMillis  (창 마감 + waitingGrace)
 -- ARGV[3] = seqDeadlineMillis      (창 마감 + seqGrace, waitingDeadline보다 늦을 것)

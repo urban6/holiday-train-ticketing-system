@@ -1,6 +1,6 @@
 -- 대기 순번 / 입장 여부 조회
--- KEYS[1] = waiting:{holiday}:{windowId}   ZSet (member=uuid, score=seq)
--- KEYS[2] = active:{holiday}:{windowId}    ZSet (member=uuid, score=만료 epoch ms)
+-- KEYS[1] = waiting:holiday:{windowId}   ZSet (member=uuid, score=seq)
+-- KEYS[2] = active:holiday:{windowId}    ZSet (member=uuid, score=만료 epoch ms)
 -- ARGV[1] = uuid
 -- ARGV[2] = nowMillis
 -- return  = { state, rank, total, expireAt }
@@ -21,6 +21,13 @@
 
 local total = redis.call('ZCARD', KEYS[1])
 local rank = redis.call('ZRANK', KEYS[1], ARGV[1])
+
+-- ZRANK는 member가 없으면 nil을 주고 Lua에서 nil은 false다. 그래서 존재 여부만 보면 된다.
+--
+-- 고칠 때 주의: Lua에서 falsy는 nil과 false뿐이고 0은 truthy다. 1등의 rank가 0이라
+-- 이 분기를 정상적으로 탄다. C나 JS 감각으로 rank > 0으로 바꾸면 1등만 여기를 못 타고
+-- 아래 활성 검사로 떨어져 state -1(없음)을 받는다 — 화면에는 404 "대기 정보를 찾을 수 없습니다"다.
+-- 한 명만 깨지므로 부하 테스트에도 시연에도 드러나지 않는다.
 if rank then
     return {0, rank, total, -1}
 end

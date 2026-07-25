@@ -1,5 +1,5 @@
 -- 활성 슬롯의 만료를 now + ttl로 다시 찍는다
--- KEYS[1] = active:{holiday}:{windowId}   ZSet (member=uuid, score=만료 epoch ms)
+-- KEYS[1] = active:holiday:{windowId}   ZSet (member=uuid, score=만료 epoch ms)
 -- ARGV[1] = uuid
 -- ARGV[2] = nowMillis
 -- ARGV[3] = ttlMillis

@@ -1,6 +1,6 @@
 -- 대기열 → 활성 승격
--- KEYS[1] = waiting:{holiday}:{windowId}   ZSet (member=uuid, score=seq)
--- KEYS[2] = active:{holiday}:{windowId}    ZSet (member=uuid, score=만료 epoch ms)
+-- KEYS[1] = waiting:holiday:{windowId}   ZSet (member=uuid, score=seq)
+-- KEYS[2] = active:holiday:{windowId}    ZSet (member=uuid, score=만료 epoch ms)
 -- ARGV[1] = nowMillis
 -- ARGV[2] = capacity              활성 정원
 -- ARGV[3] = maxBatch              한 번에 승격할 최대 인원
