@@ -34,12 +34,18 @@ public class WaitingQueueService {
 
         String uuid = UUID.randomUUID().toString();
 
-        long seq = repository.enqueue(window.windowId(), uuid, now.toEpochMilli(),
+        // 첫 조회 주기는 순번과 무관하게 항상 하한이다. 여기서는 아직 순번을 모르고,
+        // 뒤쪽 사람에게 30초를 준 채로 시작하면 자기 번호를 보기까지 그만큼 빈 화면을 본다.
+        // 첫 응답을 받은 다음부터 순번에 맞는 주기가 붙는다.
+        long firstPoll = properties.minPollInterval().toMillis();
+        long firstPollDeadline = now.toEpochMilli() + firstPoll + properties.pollGrace().toMillis();
+
+        long seq = repository.enqueue(window.windowId(), uuid, firstPollDeadline,
                 window.waitingDeadline(),
                 window.seqDeadline());
 
         // log.debug("대기열 진입. window={}, seq={}", window.windowId(), seq);
-        return new Ticket(uuid, window.windowId(), seq);
+        return new Ticket(uuid, window.windowId(), seq, firstPoll);
     }
 
     /**
@@ -56,10 +62,10 @@ public class WaitingQueueService {
     public Status status(String windowId, String token) {
         QueueKeys.requireValidWindowId(windowId);
 
-        Snapshot snapshot = repository.status(windowId, token, clock.millis());
+        Snapshot snapshot = repository.status(windowId, token, clock.millis(), properties);
 
         if (snapshot.admitted()) {
-            return new Status(token, windowId, State.ADMITTED, 0, 0, 0, snapshot.total());
+            return new Status(token, windowId, State.ADMITTED, 0, 0, 0, snapshot.total(), 0);
         }
 
         // 입장하지 못한 채 이 창의 판매가 끝난 경우다. 승격은 판매 시간 안의 현재 창에만
@@ -76,7 +82,8 @@ public class WaitingQueueService {
 
         long ahead = snapshot.rank();
         long behind = snapshot.total() - snapshot.rank() - 1;
-        return new Status(token, windowId, State.WAITING, ahead + 1, ahead, behind, snapshot.total());
+        return new Status(token, windowId, State.WAITING, ahead + 1, ahead, behind, snapshot.total(),
+                snapshot.pollAfterMillis());
     }
 
     /**
@@ -93,9 +100,13 @@ public class WaitingQueueService {
      * <p>windowId 형식은 호출자가 먼저 거른다. 여기서 던지면 페이지 요청에 400 JSON이 나간다.
      * Redis가 죽었을 때의 Unavailable(503)은 그대로 전파한다 — 대기열 자체가 돌지 않는 상황이라
      * 로그인 화면만 멀쩡한 척하는 것이 오히려 거짓말이다.
+     *
+     * <p>같은 스크립트지만 이 경로가 폴링 기한을 찍는 일은 없다. status.lua의 ZADD는 대기열에
+     * 남아 있을 때(rank가 있을 때)만 타는데, 여기 오는 사람은 이미 승격돼 ZPOPMIN으로 waiting에서
+     * 빠진 뒤다. 화면 진입마다 기한이 밀려 유령이 살아나는 경로가 아니다.
      */
     public OptionalLong activeUntil(String windowId, String token) {
-        Snapshot snapshot = repository.status(windowId, token, clock.millis());
+        Snapshot snapshot = repository.status(windowId, token, clock.millis(), properties);
         return snapshot.admitted() ? OptionalLong.of(snapshot.expireAt()) : OptionalLong.empty();
     }
 
@@ -161,7 +172,10 @@ public class WaitingQueueService {
     }
 
     /**
-     * 폴링이 끊긴 대기자를 회수한다. 스위퍼가 주기적으로 부른다.
+     * 다음 폴링 기한이 지난 대기자를 회수한다. 스위퍼가 주기적으로 부른다.
+     *
+     * <p>여기서 "몇 초 지났으면 이탈인가"를 정하지 않는다. 사람마다 다른 주기를 알려 주므로
+     * 판정 기준도 사람마다 다르고, 그 값은 조회 때 이미 기한으로 구워져 있다(status.lua).
      *
      * <p>승격(promote)과 같은 조건으로 현재 창만 훑는다. 창이 닫히면 승격이 오지 않아 순번이
      * 줄지 않고, 키도 곧 TTL로 통째로 사라지므로 회수할 이유가 없다.
@@ -176,8 +190,7 @@ public class WaitingQueueService {
             return 0;
         }
 
-        long staleBefore = now.minus(properties.staleTimeout()).toEpochMilli();
-        return repository.sweep(window.windowId(), staleBefore, properties.maxSweep());
+        return repository.sweep(window.windowId(), now.toEpochMilli(), properties.maxSweep());
     }
 
     /**
@@ -200,7 +213,11 @@ public class WaitingQueueService {
                 window.activeDeadline());
     }
 
-    public record Ticket(String token, String windowId, long seq) {}
+    /**
+     * pollAfterMillis는 첫 조회까지 기다릴 시간이다. 클라이언트가 이 값을 상수로 들고 있으면
+     * 튜닝값을 바꿀 때마다 JS와 k6를 같이 고쳐야 하므로, 진입 응답이 직접 알려 준다.
+     */
+    public record Ticket(String token, String windowId, long seq, long pollAfterMillis) {}
 
     public enum State {
         /** 대기 중. position/ahead/behind가 의미를 가진다. */
@@ -209,7 +226,14 @@ public class WaitingQueueService {
         ADMITTED
     }
 
-    /** position은 화면 표시용 1-based 순번이다. ahead/behind는 각각 내 앞·뒤 인원. */
+    /**
+     * position은 화면 표시용 1-based 순번이다. ahead/behind는 각각 내 앞·뒤 인원.
+     *
+     * <p>pollAfterMillis는 다음 조회까지 기다릴 시간이며, 순번이 뒤일수록 길다. 이 값을 서버가
+     * 정하는 이유는 승격 속도와 정원을 서버만 알고 있기 때문이다 — 근거는 status.lua 주석에 있다.
+     * 입장한 뒤에는 더 물어볼 것이 없으므로 0이다.
+     */
     public record Status(String token, String windowId, State state,
-                         long position, long ahead, long behind, long total) {}
+                         long position, long ahead, long behind, long total,
+                         long pollAfterMillis) {}
 }

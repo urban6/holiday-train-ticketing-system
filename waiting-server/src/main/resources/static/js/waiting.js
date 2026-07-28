@@ -17,7 +17,11 @@
 (function () {
     'use strict';
 
-    const POLL_INTERVAL_MS = 5000;
+    // 폴링 주기는 여기에 없다. 순번이 뒤일수록 성기게 묻도록 서버가 정해서 응답에 실어 보낸다
+    // (진입은 token과 함께, 이후는 조회 응답의 pollAfterMillis). 승격 속도와 정원은 서버만
+    // 알고 있어서, 여기서 계산하면 application.yml을 고칠 때마다 이 파일도 같이 고쳐야 한다.
+    //
+    // 남는 건 실패했을 때의 물러나는 폭뿐이다. 서버 응답을 못 받은 상황이라 여기서 정할 수밖에 없다.
     const POLL_BACKOFF_MAX_MS = 20000;
 
     // 정각에 버튼이 열리는 시나리오에서는 수많은 사용자가 같은 순간에 진입에 성공해,
@@ -25,12 +29,16 @@
     // 같은 위상을 유지하며 폴링 주기마다 요청이 파도처럼 몰린다.
     // 첫 폴링과 매 주기에 무작위 지터를 더해 위상을 흩어 놓는다. 순번 계산(POST 시점)에는
     // 영향이 없다 — 순번은 Redis ZSet 진입 순서로만 정해지고, 지터는 조회 시점에만 붙는다.
-    const POLL_JITTER_MS = 1250;
+    //
+    // 고정 ms가 아니라 비율인 건 주기가 사람마다 다르기 때문이다. 뒤쪽에 30초를 주고 지터만
+    // 1.25초로 두면 흩어지는 폭이 주기의 4%밖에 안 돼 위상이 사실상 그대로 유지된다.
+    // 서버의 poll-grace가 이 폭(+25%)을 덮고 있으므로 여기를 키우려면 그쪽도 같이 봐야 한다.
+    const POLL_JITTER_RATIO = 0.25;
 
     // Redis가 죽으면 서버는 에러를 주는 게 아니라 그냥 매달린다(기본 타임아웃 60초).
     // 클라이언트가 먼저 끊지 않으면 버튼이 잠긴 채 아무 안내도 못 준다.
-    // POLL_INTERVAL_MS와 값이 같은 건 우연이다 — fetch abort 타임아웃과 폴링 주기는
-    // 독립적인 상수이므로 한쪽만 따로 바꿔도 된다.
+    // 폴링 주기와는 무관한 값이다 — fetch abort 타임아웃은 "한 요청이 응답을 기다리는 상한"이라
+    // 주기가 30초로 늘어도 그대로다.
     const ENQUEUE_TIMEOUT_MS = 10000;
     const STATUS_TIMEOUT_MS = 5000;
     const CLAIM_TIMEOUT_MS = 5000;
@@ -41,7 +49,16 @@
     // {token, windowId}. 메모리에만 산다.
     let ticket = null;
     let timer = null;
-    let pollDelay = POLL_INTERVAL_MS;
+
+    // 서버가 마지막으로 알려 준 주기(ms)와 실제로 예약한 지연. 둘이 다른 건 지터와 백오프 때문이다.
+    // 서버는 pollInterval + poll-grace를 이탈 기한으로 잡고 있으므로, 여기서 그보다 오래 쉬면
+    // 시킨 대로 기다린 사용자가 줄에서 빠진다.
+    let pollInterval = 0;
+    let pollDelay = 0;
+
+    // 마지막으로 조회를 보낸 시각. 탭이 돌아왔을 때 서버가 준 주기를 무시하고
+    // 즉시 다시 묻는 걸 막는 데만 쓴다.
+    let lastPollAt = 0;
 
     // 입장에 성공해 다음 화면으로 넘어가는 중인지. 그 이동도 pagehide라서, 이 플래그가 없으면
     // 방금 받은 자리를 스스로 반납하는 이탈 요청을 보내게 된다.
@@ -72,13 +89,24 @@
     // 브라우저가 비활성 탭의 타이머를 강하게 늦추므로, 돌아왔다는 신호(visibilitychange)가
     // 다음 예약된 타이머를 기다리는 것보다 빠르다. 입장권 grace(150초)를 놓치는 가장 흔한
     // 원인이 이 지연이라 탭이 보이는 즉시 폴링을 재개한다.
+    //
+    // 다만 주기가 지나기 전에 돌아왔다면 남은 만큼만 다시 예약한다. 뒤쪽 사람은 주기가 30초까지
+    // 늘어나는데, 그걸 무시하고 매번 즉시 묻게 두면 탭 전환 한 번이 주기를 통째로 무효로 만든다.
+    // 포커스 이동은 사용자들 사이에 상관돼 있어서 그 요청이 한꺼번에 몰린다.
     document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible' && ticket && !inFlight) {
-            clearTimeout(timer);
-            timer = null;
-            pollDelay = POLL_INTERVAL_MS;
-            poll();
+        if (document.visibilityState !== 'visible' || !ticket || inFlight) {
+            return;
         }
+
+        clearTimeout(timer);
+        timer = null;
+
+        const remaining = pollInterval - (Date.now() - lastPollAt);
+        if (remaining > 0) {
+            timer = setTimeout(poll, remaining);
+            return;
+        }
+        poll();
     });
 
     /*
@@ -160,9 +188,13 @@
         resetFigures();
         dialog.showModal();
 
-        // 진입은 몰려도(POST) 첫 조회는 몰리지 않게, 0~POLL_INTERVAL_MS 구간에서
-        // 무작위로 골라 첫 요청부터 위상을 흩어 놓는다.
-        pollDelay = Math.random() * POLL_INTERVAL_MS;
+        // 첫 주기도 서버가 알려 준다. 아직 순번을 모르는 시점이라 항상 하한이고,
+        // 순번에 맞는 주기는 첫 응답부터 붙는다.
+        pollInterval = body.pollAfterMillis;
+
+        // 진입은 몰려도(POST) 첫 조회는 몰리지 않게, 0~주기 구간에서 무작위로 골라
+        // 첫 요청부터 위상을 흩어 놓는다.
+        pollDelay = Math.random() * pollInterval;
         timer = setTimeout(poll, pollDelay);
     }
 
@@ -176,6 +208,7 @@
             return;
         }
         inFlight = true;
+        lastPollAt = Date.now();
 
         try {
             const url = '/api/v1/waiting-queue/' + encodeURIComponent(ticket.token)
@@ -232,7 +265,9 @@
 
             render(body);
 
-            pollDelay = jitteredDelay(POLL_INTERVAL_MS, POLL_JITTER_MS);
+            // 다음 주기는 서버가 정한다. 순번이 줄면 이 값도 함께 짧아진다.
+            pollInterval = body.pollAfterMillis;
+            pollDelay = jitteredDelay(pollInterval, pollInterval * POLL_JITTER_RATIO);
             timer = setTimeout(poll, pollDelay);
         } finally {
             inFlight = false;
@@ -311,10 +346,15 @@
     // 실제 대기 시간은 "절반 고정 + 절반 무작위"로 흩어 재시도가 몰리는 걸 막는다.
     function retryLater(message) {
         status.textContent = message;
-        // 첫 폴링은 지터로 인해 pollDelay가 아주 작을 수 있다(0~POLL_INTERVAL_MS).
+        // 첫 폴링은 지터로 인해 pollDelay가 아주 작을 수 있다(0~주기).
         // 거기서 바로 실패하면 배수 증가의 기준값이 작아 백오프가 사실상 없는 셈이 되므로,
-        // 최소 기준을 POLL_INTERVAL_MS로 둔다.
-        const capped = Math.min(Math.max(pollDelay, POLL_INTERVAL_MS) * 2, POLL_BACKOFF_MAX_MS);
+        // 최소 기준을 서버가 알려 준 주기로 둔다.
+        //
+        // 상한도 주기를 바닥으로 깐다. POLL_BACKOFF_MAX_MS 하나로 자르면, 서버가 30초를 준
+        // 뒤쪽 사람이 실패하는 순간 20초로 **짧아진다** — 조용히 하려던 바로 그 인원이,
+        // 하필 서버가 아플 때 요청을 더 보내게 된다.
+        const base = Math.max(pollDelay, pollInterval);
+        const capped = Math.min(base * 2, Math.max(POLL_BACKOFF_MAX_MS, base));
         pollDelay = capped;
         const delay = capped / 2 + Math.random() * (capped / 2);
         timer = setTimeout(poll, delay);

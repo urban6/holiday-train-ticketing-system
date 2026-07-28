@@ -1,10 +1,10 @@
 -- 대기열 이탈
 -- KEYS[1] = waiting:holiday:{windowId}   ZSet (member=uuid, score=seq)
--- KEYS[2] = seen:holiday:{windowId}      ZSet (member=uuid, score=마지막 확인 epoch ms)
+-- KEYS[2] = poll:holiday:{windowId}      ZSet (member=uuid, score=다음 폴링 기한 epoch ms)
 -- ARGV[1] = uuid
 -- return  = 1 실제로 뺐음 / 0 이미 없었음 (호출부는 둘 다 성공으로 본다)
 --
--- 두 키에 걸치므로 묶는다. 갈라 두면 waiting에서만 빠지고 seen에 남아, 스위퍼가 매 주기
+-- 두 키에 걸치므로 묶는다. 갈라 두면 waiting에서만 빠지고 기한이 남아, 스위퍼가 매 주기
 -- 이미 없는 토큰을 다시 지우려 든다.
 --
 -- active는 건드리지 않는다. 입장에 성공해 다음 화면으로 넘어가는 것도 pagehide라서

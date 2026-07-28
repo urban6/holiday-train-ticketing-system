@@ -1,7 +1,7 @@
 -- 대기열 → 활성 승격
 -- KEYS[1] = waiting:holiday:{windowId}   ZSet (member=uuid, score=seq)
 -- KEYS[2] = active:holiday:{windowId}    ZSet (member=uuid, score=만료 epoch ms)
--- KEYS[3] = seen:holiday:{windowId}      ZSet (member=uuid, score=마지막 확인 epoch ms)
+-- KEYS[3] = poll:holiday:{windowId}      ZSet (member=uuid, score=다음 폴링 기한 epoch ms)
 -- ARGV[1] = nowMillis
 -- ARGV[2] = capacity              활성 정원
 -- ARGV[3] = maxBatch              한 번에 승격할 최대 인원
@@ -30,8 +30,8 @@ if #popped == 0 then
 end
 
 -- ZADD 한 번에 몰 수도 있지만 unpack은 Lua 스택 한계(약 8000)가 있다. 루프는 maxBatch에만 비례한다.
--- seen에서 빼는 것도 여기서 한다. 승격된 사람은 더 이상 폴링으로 시각을 갱신하지 않으므로,
--- 남겨 두면 stale-timeout 뒤에 스위퍼가 매번 걸어 이미 없는 항목을 waiting에서 지우려 든다.
+-- 폴링 기한에서 빼는 것도 여기서 한다. 승격된 사람은 더 이상 폴링으로 기한을 갱신하지 않으므로,
+-- 남겨 두면 기한이 지난 뒤 스위퍼가 매번 걸어 이미 없는 항목을 waiting에서 지우려 든다.
 local expireAt = now + tonumber(ARGV[4])
 for i = 1, #popped, 2 do
     redis.call('ZADD', KEYS[2], expireAt, popped[i])

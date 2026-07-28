@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
  * waiting:holiday:{windowId}       ZSet   member=uuid, score=seq
  * waiting:holiday:{windowId}:seq   String 창별 단조 증가 순번 카운터
  * active:holiday:{windowId}        ZSet   member=uuid, score=만료 epoch ms
- * seen:holiday:{windowId}          ZSet   member=uuid, score=마지막 확인 epoch ms
+ * poll:holiday:{windowId}          ZSet   member=uuid, score=다음 폴링 기한 epoch ms
  * </pre>
  *
  * <p>{@code holiday}는 플레이스홀더가 아니라 {@link #EVENT_ID} 상수 그대로다.
@@ -64,13 +64,18 @@ public final class QueueKeys {
     }
 
     /**
-     * 대기자가 마지막으로 순번을 확인한 시각. member=uuid, score=epoch ms.
+     * 대기자가 다음 조회를 보내야 하는 기한. member=uuid, score=epoch ms.
+     *
+     * <p>score가 과거가 아니라 미래를 가리킨다. 서버가 사람마다 다른 폴링 주기를 알려 주므로
+     * 이탈 판정 기준도 사람마다 달라야 하는데, "마지막으로 본 시각"을 저장하면 스위퍼의
+     * ZRANGEBYSCORE가 사람별 임계값을 알 방법이 없다 — ZSet은 join이 안 된다.
+     * 알려 준 주기를 여기서 미리 더해 구워 두면 스위퍼의 임계값이 지금 시각 하나로 끝난다.
      *
      * <p>waiting과 따로 두는 이유는 waiting의 score가 이미 seq(순번)이기 때문이다.
-     * ZRANK가 순번의 근거라 score를 만료시각으로 바꿀 수 없어서, active처럼
-     * "score 하나가 곧 만료"로 만들지 못한다.
+     * ZRANK가 순번의 근거라 그 score를 기한으로 바꿀 수 없어서, active처럼
+     * "score 하나가 곧 만료"인 키를 하나 더 둔다.
      */
-    public static String seen(String windowId) {
-        return "seen:%s:%s".formatted(EVENT_ID, windowId);
+    public static String pollDeadline(String windowId) {
+        return "poll:%s:%s".formatted(EVENT_ID, windowId);
     }
 }
