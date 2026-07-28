@@ -10,13 +10,13 @@ import org.springframework.stereotype.Component;
  *
  * <p>사용자가 팝업을 닫거나 탭을 닫으면 클라이언트가 이탈(leave)을 보내지만, 그 신호가 아예 오지
  * 않는 경로가 있다 — 브라우저 크래시, 기기 꺼짐, 모바일 OS의 백그라운드 탭 종료, 네트워크 단절.
- * 그쪽은 "마지막으로 순번을 확인한 시각"으로 판단하는 수밖에 없고, 그게 여기다.
+ * 그쪽은 "다음 조회가 올 기한을 넘겼는가"로 판단하는 수밖에 없고, 그게 여기다.
  *
  * <p>이탈을 방치하면 순번만 부풀지 않는다. <b>유령도 순서가 되면 승격되어 아무도 쓰지 않는 활성
  * 슬롯을 admission-grace만큼 잡으므로 실효 정원이 깎인다.</b>
  *
  * <p>{@link AdmissionScheduler}와 합치지 않은 이유는 주기가 다르기 때문이다. 승격은 초당 한 번이지만
- * 회수 판정 기준(stale-timeout)은 수십 초 단위라 그만큼 자주 훑을 이유가 없다. 한쪽 실패가 다른
+ * 회수 판정 기준에 걸린 poll-grace는 수십 초 단위라 그만큼 자주 훑을 이유가 없다. 한쪽 실패가 다른
  * 쪽 주기를 건드리지 않는 것도 나눠 둔 값이다.
  *
  * <p><b>WAS를 다중화하면 이 스케줄러도 승격과 함께 단일화해야 한다.</b> 인스턴스마다 돌면
@@ -29,11 +29,13 @@ import org.springframework.stereotype.Component;
 public class StaleSweeper {
 
     private final WaitingQueueService waitingQueueService;
+    private final QueueMetrics metrics;
 
     @Scheduled(fixedDelayString = "${queue.sweep-interval}")
     public void sweep() {
         try {
             long swept = waitingQueueService.sweepStale();
+            metrics.recordSweep(swept);
 
             // 회수한 게 없을 때도 찍으면 주기마다 빈 로그가 쌓인다.
             if (swept > 0) {

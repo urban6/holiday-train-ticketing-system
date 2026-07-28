@@ -24,11 +24,16 @@ import org.springframework.stereotype.Component;
 public class AdmissionScheduler {
 
     private final WaitingQueueService waitingQueueService;
+    private final QueueMetrics metrics;
 
     @Scheduled(fixedDelayString = "${queue.promote-interval}")
     public void promote() {
         try {
             Promotion result = waitingQueueService.promote();
+
+            // 로그와 달리 지표는 올린 게 없어도 남긴다. 대기·활성 인원은 승격이 멈춘 구간에서도
+            // 읽혀야 하고, loadtest 프로파일에서는 아래 로그가 애초에 찍히지 않는다.
+            metrics.recordPromotion(result);
 
             // 올린 게 없을 때도 찍으면 초당 한 줄씩 빈 로그가 쌓인다.
             if (result.promoted() > 0) {
