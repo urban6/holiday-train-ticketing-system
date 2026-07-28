@@ -65,7 +65,9 @@ public class WaitingQueueService {
         Snapshot snapshot = repository.status(windowId, token, clock.millis(), properties);
 
         if (snapshot.admitted()) {
-            return new Status(token, windowId, State.ADMITTED, 0, 0, 0, snapshot.total(), 0);
+            // 입장한 사람에게도 total은 "지금 몇 명이 기다리는지"로 남으므로 같은 배수로 환산한다.
+            return new Status(token, windowId, State.ADMITTED, 0, 0, 0,
+                    snapshot.total() * repository.shardCount(), 0);
         }
 
         // 입장하지 못한 채 이 창의 판매가 끝난 경우다. 승격은 판매 시간 안의 현재 창에만
@@ -80,9 +82,20 @@ public class WaitingQueueService {
             throw new QueueException.Expired("대기 정보를 찾을 수 없습니다.");
         }
 
-        long ahead = snapshot.rank();
-        long behind = snapshot.total() - snapshot.rank() - 1;
-        return new Status(token, windowId, State.WAITING, ahead + 1, ahead, behind, snapshot.total(),
+        // 샤드 안 순번을 전역으로 환산한다. 정확히 세려면 다른 샤드까지 물어야 하는데, 그러면
+        // 조회 한 번이 모든 샤드를 때려 폴링에서 샤딩 이득이 사라진다(WaitingQueueRepository.status 참고).
+        //
+        // 균등 해시라 내 앞의 사람들은 샤드에 고르게 흩어져 있고, 따라서 내 샤드 순번은 전역
+        // 순번의 약 1/샤드수다. 오차는 Binomial(p, 1/k)의 표준편차라 sqrt(p(k-1))이고,
+        // 100만 번째에서 최대 3,282명(0.33%)이었다 — 화면에서 사람이 구별하지 못하는 폭이다.
+        // 근거는 k6/shard-probe.sh의 측정 기록에 있다.
+        //
+        // 셋을 같은 배수로 곱하므로 "0 <= 앞 < 전체"도, 순번이 줄기만 하는 것도 그대로 성립한다.
+        int shards = repository.shardCount();
+        long ahead = snapshot.rank() * shards;
+        long total = snapshot.total() * shards;
+        long behind = total - ahead - 1;
+        return new Status(token, windowId, State.WAITING, ahead + 1, ahead, behind, total,
                 snapshot.pollAfterMillis());
     }
 
@@ -182,7 +195,7 @@ public class WaitingQueueService {
      *
      * @return 이번 주기에 회수한 인원
      */
-    public long sweepStale() {
+    public long sweepStale(int shard) {
         Instant now = clock.instant();
         DailyWindow.Window window = dailyWindow.at(now);
 
@@ -190,7 +203,12 @@ public class WaitingQueueService {
             return 0;
         }
 
-        return repository.sweep(window.windowId(), now.toEpochMilli(), properties.maxSweep());
+        return repository.sweep(window.windowId(), shard, now.toEpochMilli(), properties.maxSweep());
+    }
+
+    /** 스케줄러가 몇 번 돌아야 하는지. 설정을 스케줄러에 다시 주입하지 않으려고 여기서 노출한다. */
+    public int shardCount() {
+        return repository.shardCount();
     }
 
     /**
@@ -201,7 +219,7 @@ public class WaitingQueueService {
      * 잘못 세어지지는 않는다 — 회수되지 않은 멤버는 status.lua가 score로 걸러내고,
      * 키 자체는 activeDeadline에 사라진다.
      */
-    public Promotion promote() {
+    public Promotion promote(int shard) {
         Instant now = clock.instant();
         DailyWindow.Window window = dailyWindow.at(now);
 
@@ -209,13 +227,17 @@ public class WaitingQueueService {
             return new Promotion(0, 0, 0);
         }
 
-        return repository.promote(window.windowId(), clock.millis(), properties,
+        return repository.promote(window.windowId(), shard, clock.millis(), properties,
                 window.activeDeadline());
     }
 
     /**
      * pollAfterMillis는 첫 조회까지 기다릴 시간이다. 클라이언트가 이 값을 상수로 들고 있으면
      * 튜닝값을 바꿀 때마다 JS와 k6를 같이 고쳐야 하므로, 진입 응답이 직접 알려 준다.
+     *
+     * <p>seq는 <b>샤드 안에서의</b> 발급 번호다. 샤드마다 카운터가 따로라 전역 순번이 아니고,
+     * 전역 카운터를 두면 그 키 하나가 샤드로 나눈 부하를 도로 모아 새 병목이 된다.
+     * 클라이언트는 이 값을 쓰지 않는다 — 화면에 뜨는 순번은 조회 응답의 position이다.
      */
     public record Ticket(String token, String windowId, long seq, long pollAfterMillis) {}
 
@@ -228,6 +250,11 @@ public class WaitingQueueService {
 
     /**
      * position은 화면 표시용 1-based 순번이다. ahead/behind는 각각 내 앞·뒤 인원.
+     *
+     * <p><b>position·ahead·behind·total은 근사값이다.</b> 대기열이 샤드로 나뉘어 있고 조회는 자기
+     * 샤드만 보므로, 샤드 안 값에 샤드 수를 곱해 전역으로 환산한다. 오차는 100만 번째에서 0.33%
+     * 수준이고, 그 대신 조회가 샤드 하나로 끝나 폴링 부하가 샤드 수만큼 나뉜다.
+     * 근사여도 {@code 0 <= ahead < total}과 "순번은 줄기만 한다"는 그대로 지켜진다.
      *
      * <p>pollAfterMillis는 다음 조회까지 기다릴 시간이며, 순번이 뒤일수록 길다. 이 값을 서버가
      * 정하는 이유는 승격 속도와 정원을 서버만 알고 있기 때문이다 — 근거는 status.lua 주석에 있다.

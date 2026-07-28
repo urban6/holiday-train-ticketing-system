@@ -33,18 +33,25 @@ public class StaleSweeper {
 
     @Scheduled(fixedDelayString = "${queue.sweep-interval}")
     public void sweep() {
+        for (int shard = 0; shard < waitingQueueService.shardCount(); shard++) {
+            sweepShard(shard);
+        }
+    }
+
+    /** try가 샤드 안에 있는 이유는 승격과 같다 — 한 인스턴스의 장애가 나머지 회수를 멈추면 안 된다. */
+    private void sweepShard(int shard) {
         try {
-            long swept = waitingQueueService.sweepStale();
-            metrics.recordSweep(swept);
+            long swept = waitingQueueService.sweepStale(shard);
+            metrics.recordSweep(shard, swept);
 
             // 회수한 게 없을 때도 찍으면 주기마다 빈 로그가 쌓인다.
             if (swept > 0) {
-                log.info("이탈 회수. swept={}", swept);
+                log.info("이탈 회수. shard={}, swept={}", shard, swept);
             }
         } catch (QueueException.Unavailable e) {
             // fixedDelay라 다시 던져도 다음 주기가 그대로 온다. 스택트레이스만 쌓일 뿐이다.
             // Redis가 돌아오면 저절로 재개된다 — AdmissionScheduler와 같은 취급이다.
-            log.warn("이탈 회수 실패. 다음 주기에 재시도한다: {}", e.getMessage());
+            log.warn("이탈 회수 실패. 다음 주기에 재시도한다. shard={}: {}", shard, e.getMessage());
         }
     }
 }

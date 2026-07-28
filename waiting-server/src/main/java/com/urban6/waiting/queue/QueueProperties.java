@@ -2,6 +2,9 @@ package com.urban6.waiting.queue;
 
 import java.time.Duration;
 import java.time.LocalTime;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -14,6 +17,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record QueueProperties(
         LocalTime open,
         LocalTime close,
+        int shardCount,
+        List<ShardEndpoint> shardEndpoints,
         int capacity,
         int maxBatch,
         Duration promoteInterval,
@@ -28,8 +33,40 @@ public record QueueProperties(
         int maxSweep
 ) {
 
+    /** 샤드 하나가 붙을 Redis. 목록이 비어 있으면 전부 spring.data.redis 한 곳을 쓴다. */
+    public record ShardEndpoint(String host, int port) {
+
+        @Override
+        public String toString() {
+            return host + ":" + port;
+        }
+    }
+
     public QueueProperties {
+        shardEndpoints = shardEndpoints == null ? List.of() : List.copyOf(shardEndpoints);
+
+        require(shardCount > 0, "queue.shard-count는 1 이상이어야 합니다: " + shardCount);
+
+        // 목록을 비워 두는 것은 "샤드를 키로만 가른다"는 뜻이라 유효한 설정이다(테스트·단일 인스턴스 개발).
+        // 다만 개수를 적어 두고 목록을 반만 채우면, 있는 것만 쓰이면서 나머지 샤드가 조용히
+        // 엉뚱한 인스턴스로 가거나 기동 뒤 한참 있다 터진다. 그래서 전부이거나 전무여야 한다.
+        require(shardEndpoints.isEmpty() || shardEndpoints.size() == shardCount,
+                "queue.shard-endpoints는 비어 있거나 queue.shard-count(%d)와 같은 개수여야 합니다: %d개"
+                        .formatted(shardCount, shardEndpoints.size()));
+
+        // 같은 인스턴스를 두 번 적으면 그 인스턴스가 두 샤드분 부하를 받는다. 깊이가 갈리면
+        // 순번 근사(ZRANK x 샤드 수)의 전제인 균등 분배가 깨져 순번이 그만큼 틀린다.
+        Set<ShardEndpoint> distinct = new HashSet<>(shardEndpoints);
+        require(distinct.size() == shardEndpoints.size(),
+                "queue.shard-endpoints에 같은 인스턴스가 두 번 있습니다: " + shardEndpoints);
+
         require(capacity > 0, "queue.capacity는 1 이상이어야 합니다: " + capacity);
+
+        // capacity는 전역 값이고 샤드가 나눠 갖는다. 샤드보다 작으면 몫이 0인 샤드가 생겨
+        // 그 샤드의 대기자는 영영 승격되지 않는다.
+        require(capacity >= shardCount,
+                "queue.capacity(%d)가 queue.shard-count(%d)보다 작습니다. 몫이 0인 샤드가 생깁니다."
+                        .formatted(capacity, shardCount));
         require(maxBatch > 0, "queue.max-batch는 1 이상이어야 합니다: " + maxBatch);
         require(maxSweep > 0, "queue.max-sweep은 1 이상이어야 합니다: " + maxSweep);
         require(pollUpdates > 0, "queue.poll-updates는 1 이상이어야 합니다: " + pollUpdates);
@@ -95,9 +132,25 @@ public record QueueProperties(
      * <p>Lua에 나누기를 넘기지 않고 여기서 접는 이유는 정수 나눗셈이다. promoteInterval(1s)을
      * maxBatch로 먼저 나누면 max-batch가 1000을 넘는 순간 0이 되어, 모두가 하한에 붙고
      * 이 기능이 아무 소리 없이 꺼진다. double로 한 번에 나누면 그 함정이 없다.
+     *
+     * <p><b>샤드 수가 여기 들어오지 않는 것이 맞다.</b> status.lua가 주는 순번은 그 사람의
+     * 샤드 안에서의 순번이고, 그 샤드는 maxBatch씩 빠진다 — 둘의 축이 이미 같다.
+     * 전역으로 환산하면 순번도 승격 속도도 나란히 샤드 수만큼 커져 몫이 그대로다.
+     * 여기에 샤드 수를 곱하거나 나누면 그 상쇄를 깨서 주기가 샤드 수만큼 어긋난다.
      */
     public double millisPerRank() {
         return (double) promoteInterval.toMillis() / maxBatch / pollUpdates;
+    }
+
+    /**
+     * 이 샤드가 가진 활성 정원. 전역 capacity를 샤드가 나눠 갖는다.
+     *
+     * <p>나머지를 앞 샤드에 하나씩 얹어 합이 정확히 capacity가 되게 한다. 그냥 정수 나눗셈만
+     * 하면 1000명 정원이 샤드 3개에서 999명이 되는데, 정원은 뒷단이 감당할 수 있는 수라
+     * 조용히 줄어드는 쪽보다 적어 둔 값과 같은 쪽이 낫다.
+     */
+    public int capacityOf(int shard) {
+        return capacity / shardCount + (shard < capacity % shardCount ? 1 : 0);
     }
 
     private static boolean positive(Duration d) {

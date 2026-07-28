@@ -20,7 +20,25 @@ spring:
   data:
     redis:
       # 기본값 60초. 포화 시 에러가 나는 게 아니라 그냥 매달린다.
+      # 샤드 연결도 이 값을 그대로 물려받는다 — 샤드만 60초로 남으면 포화 구간에서
+      # 샤드마다 다르게 실패해 그 측정이 무엇을 잰 것인지 알 수 없게 된다(QueueShards 참고).
       timeout: 1s
+
+queue:
+  # 대기열을 실제로 세 인스턴스에 나눈다. 기본 프로파일은 목록이 비어 있어 한 대에 키로만
+  # 갈라 두는데, 그러면 이벤트 루프가 하나라 처리량 이득이 없어 측정할 것이 없다.
+  #
+  # 띄우는 법 (Docker가 아니라 네이티브다 — 포트 포워딩이 처리량의 66%를 먹는다, k6/redis-baseline.sh):
+  #   for p in 6380 6381 6382; do
+  #     redis-server infra/redis/redis.conf --port $p --bind 127.0.0.1 --maxmemory 2gb --daemonize yes
+  #   done
+  #
+  # 개수는 queue.shard-count와 같아야 한다. 다르면 기동에서 막힌다 —
+  # 반만 채운 채로 뜨면 나머지 샤드가 조용히 엉뚱한 곳으로 간다.
+  shard-endpoints:
+    - { host: 127.0.0.1, port: 6380 }
+    - { host: 127.0.0.1, port: 6381 }
+    - { host: 127.0.0.1, port: 6382 }
 
 server:
   tomcat:

@@ -14,6 +14,10 @@ import org.springframework.stereotype.Component;
  * 만 명이 2초마다 폴링하면 약 5,000 rps라 거기에 쓰기를 섞는 대가가 크다.
  * 그래서 승격은 초당 한 번, 여기 한 곳에서만 일어난다.
  *
+ * <p>샤드를 순차로 돈다. 샤드 셋이면 한 주기에 Lua 호출이 셋인데 각각 1ms 남짓이라,
+ * 병렬로 띄워 스레드를 쓰는 대신 그냥 차례로 부른다. 대신 <b>try는 샤드 안에 둔다</b> —
+ * 한 인스턴스가 죽었을 때 나머지 샤드의 승격까지 같이 멈추면, 장애 하나가 전체 정지가 된다.
+ *
  * <p><b>WAS를 다중화하면 이 스케줄러를 단일화해야 한다.</b> 인스턴스마다 돌면 승격 주기가
  * 인스턴스 수만큼 짧아진다. Lua가 원자적이라 정원을 넘기지는 않지만, 한 주기의 실효 배치가
  * N배가 되어 maxBatch로 막으려던 지연 스파이크가 그대로 돌아온다.
@@ -28,22 +32,28 @@ public class AdmissionScheduler {
 
     @Scheduled(fixedDelayString = "${queue.promote-interval}")
     public void promote() {
+        for (int shard = 0; shard < waitingQueueService.shardCount(); shard++) {
+            promoteShard(shard);
+        }
+    }
+
+    private void promoteShard(int shard) {
         try {
-            Promotion result = waitingQueueService.promote();
+            Promotion result = waitingQueueService.promote(shard);
 
             // 로그와 달리 지표는 올린 게 없어도 남긴다. 대기·활성 인원은 승격이 멈춘 구간에서도
             // 읽혀야 하고, loadtest 프로파일에서는 아래 로그가 애초에 찍히지 않는다.
-            metrics.recordPromotion(result);
+            metrics.recordPromotion(shard, result);
 
-            // 올린 게 없을 때도 찍으면 초당 한 줄씩 빈 로그가 쌓인다.
+            // 올린 게 없을 때도 찍으면 초당 샤드마다 한 줄씩 빈 로그가 쌓인다.
             if (result.promoted() > 0) {
-                log.info("입장 승격. promoted={}, active={}, waiting={}",
-                        result.promoted(), result.active(), result.waiting());
+                log.info("입장 승격. shard={}, promoted={}, active={}, waiting={}",
+                        shard, result.promoted(), result.active(), result.waiting());
             }
         } catch (QueueException.Unavailable e) {
             // 다시 던져도 fixedDelay는 다음 주기에 그대로 돌아온다. 스택트레이스만 초당 한 번 쌓일 뿐이다.
             // Redis가 돌아오면 다음 주기에 저절로 재개된다.
-            log.warn("입장 승격 실패. 다음 주기에 재시도한다: {}", e.getMessage());
+            log.warn("입장 승격 실패. 다음 주기에 재시도한다. shard={}: {}", shard, e.getMessage());
         }
     }
 }
