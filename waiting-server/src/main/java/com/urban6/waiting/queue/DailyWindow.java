@@ -31,7 +31,7 @@ public class DailyWindow {
 
     /**
      * 창의 마감이 곧 이 창에 딸린 Redis 키들의 수명이다. 그래서 TTL 정책을 창이 들고 있다.
-     * 키를 심는 쪽이 여럿(진입·승격·시연용 시드)이라, 각자 유예 시간을 더하게 두면
+     * 키를 심는 쪽이 여럿(진입·승격)이라, 각자 유예 시간을 더하게 두면
      * 같은 키에 서로 다른 TTL이 찍히는 순간을 아무도 눈치채지 못한다.
      */
     public record Window(String windowId, Instant openAt, Instant closeAt) {

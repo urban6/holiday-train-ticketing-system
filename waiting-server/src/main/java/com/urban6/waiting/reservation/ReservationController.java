@@ -9,7 +9,6 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -26,7 +25,6 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
  * 거친다. 여기 메서드 안에 입장권·로그인 검사가 없는 것은 빠뜨려서가 아니라 게이트가 앞단에 있기
  * 때문이다. 새 경로를 추가하면 반드시 WebConfig 화이트리스트에 등록해야 한다.
  */
-@Slf4j
 @Controller
 @RequiredArgsConstructor
 public class ReservationController {
