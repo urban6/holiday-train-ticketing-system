@@ -24,7 +24,7 @@
 #   네이티브      105,764 rps  ← Docker 밖: redis-server infra/redis/redis.conf --port 6380 --bind 127.0.0.1
 #
 # → Docker 포트 포워딩이 처리량의 66%를 먹는다. 다만 그 천장을 2.9배 열어도 앱은 6%만 올랐다.
-#   앱은 이 경로에 묶여 있지 않다 — docs/measurement.md의 "Docker 천장을 걷어내면" 참고.
+#   앱은 이 경로에 묶여 있지 않다.
 
 set -euo pipefail
 
