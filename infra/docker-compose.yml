@@ -13,7 +13,8 @@ services:
     volumes:
       - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
       - redis-data:/data
-    mem_limit: 1G
+    # maxmemory(2gb)보다 높아야 Redis가 자기 한도에 먼저 걸린다. 근거는 redis.conf 메모리 주석.
+    mem_limit: 3G
     cpus: "1.0"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -45,8 +46,9 @@ services:
       # PGDATA는 /var/lib/postgresql/18/docker 다. 예전 경로에 마운트하면 에러 없이 그냥
       # 영속되지 않는다 — 컨테이너를 지우는 순간 데이터가 사라지는데 로그에는 아무 흔적도 없다.
       - postgres-data:/var/lib/postgresql
-    # redis와 같은 상한을 준다. k6·애플리케이션·DB가 모두 같은 Mac에서 CPU를 나눠 쓰므로
-    # DB가 측정 대상의 몫을 잠식하지 않게 막는 의미도 있다. 좌석 페이즈에서 재검토한다.
+    # redis와 달리 대기열 규모를 따라가지 않으므로 1G에 둔다. k6·애플리케이션·DB가 모두 같은
+    # Mac에서 CPU를 나눠 쓰므로 DB가 측정 대상의 몫을 잠식하지 않게 막는 의미도 있다.
+    # 좌석 페이즈에서 재검토한다.
     mem_limit: 1G
     cpus: "1.0"
     healthcheck:
