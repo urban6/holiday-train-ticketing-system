@@ -43,7 +43,7 @@ class StatusSnapshotTest {
     void clearWindow() {
         redis.delete(List.of(
                 QueueKeys.waiting(windowId()), QueueKeys.seq(windowId()),
-                QueueKeys.active(windowId()), QueueKeys.seen(windowId())));
+                QueueKeys.active(windowId()), QueueKeys.pollDeadline(windowId())));
     }
 
     @Test

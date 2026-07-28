@@ -27,8 +27,12 @@ import org.springframework.data.redis.core.StringRedisTemplate;
  * 슬롯을 admission-grace만큼 잡으므로 실효 정원이 깎인다.</b> 그래서 회수 경로가 둘이다 —
  * 클라이언트가 보내는 이탈(leave)과, 그 신호가 오지 않는 경우를 덮는 스위퍼(sweepStale).
  *
- * <p>시계를 앞으로 돌려 검증한다. stale-timeout이 60초라 실시간으로 기다리는 테스트는
- * 결국 아무도 돌리지 않는다. MutableClock은 {@link ReservationDeadlineTest}의 것을 그대로 쓴다.
+ * <p>판정 기준은 사람마다 다르다. 서버가 순번에 따라 다른 폴링 주기를 알려 주고, 이탈 기한이
+ * "알려 준 주기 + poll-grace"로 정해지기 때문이다. 그래서 여기 경계값은 모두
+ * {@code minPollInterval + pollGrace}(맨 앞) 또는 {@code maxPollInterval + pollGrace}(뒤쪽)이다.
+ *
+ * <p>시계를 앞으로 돌려 검증한다. 기한이 분 단위라 실시간으로 기다리는 테스트는 결국 아무도
+ * 돌리지 않는다. MutableClock은 {@link ReservationDeadlineTest}의 것을 그대로 쓴다.
  */
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest(properties = {
@@ -39,7 +43,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
         // 승격이 끼어드는 순간 대기자가 통째로 active로 옮겨 가 waiting이 비고, 스위퍼는 훑을 것이
         // 없어진다. 시계를 앞으로 돌리는 테스트라 배경 스윕도 같은 이유로 결과를 가로챈다.
         "queue.promote-interval=1h",
-        // stale-timeout(60s)보다 작아야 기동 검증을 통과한다. 테스트가 그 전에 끝난다.
+        // poll-grace(60s)보다 작아야 기동 검증을 통과한다. 테스트가 그 전에 끝난다.
         "queue.sweep-interval=59s"
 })
 class QueueLeaveTest {
@@ -65,7 +69,7 @@ class QueueLeaveTest {
     void clearWindow() {
         redis.delete(List.of(
                 QueueKeys.waiting(windowId()), QueueKeys.seq(windowId()),
-                QueueKeys.active(windowId()), QueueKeys.seen(windowId())));
+                QueueKeys.active(windowId()), QueueKeys.pollDeadline(windowId())));
     }
 
     @Test
@@ -80,8 +84,8 @@ class QueueLeaveTest {
 
         assertThat(waitingCount()).isEqualTo(1);
         assertThat(status(second).ahead()).isZero();
-        // seen도 함께 비워야 스위퍼가 매 주기 이미 없는 토큰을 다시 지우려 들지 않는다.
-        assertThat(seenCount()).isEqualTo(1);
+        // 폴링 기한도 함께 비워야 스위퍼가 매 주기 이미 없는 토큰을 다시 지우려 들지 않는다.
+        assertThat(pollDeadlineCount()).isEqualTo(1);
     }
 
     @Test
@@ -112,30 +116,30 @@ class QueueLeaveTest {
     }
 
     @Test
-    @DisplayName("승격되면 seen에서도 빠진다")
+    @DisplayName("승격되면 폴링 기한에서도 빠진다")
     void promotionClearsTheHeartbeat() {
-        // 승격된 사람은 더 이상 폴링으로 시각을 갱신하지 않는다. 남겨 두면 stale-timeout 뒤에
+        // 승격된 사람은 더 이상 폴링으로 기한을 갱신하지 않는다. 남겨 두면 기한이 지난 뒤
         // 스위퍼가 매 주기 이미 없는 항목을 waiting에서 지우려 든다.
         waitingQueueService.enqueue();
         waitingQueueService.promote();
 
-        assertThat(seenCount()).isZero();
+        assertThat(pollDeadlineCount()).isZero();
     }
 
     @Test
-    @DisplayName("폴링이 끊긴 대기자는 stale-timeout이 지나면 회수된다")
+    @DisplayName("폴링이 끊긴 대기자는 알려 준 주기 + 유예가 지나면 회수된다")
     void sweeperRemovesStaleWaiters() {
         waitingQueueService.enqueue();
 
         // 경계 직전에는 남아 있어야 한다. 짧게 잡으면 순단으로 백오프 중이던 정상 사용자가 빠진다.
-        clock.advance(properties.staleTimeout().minusMillis(1));
+        clock.advance(frontDeadline().minusMillis(1));
         assertThat(waitingQueueService.sweepStale()).isZero();
         assertThat(waitingCount()).isEqualTo(1);
 
         clock.advance(Duration.ofMillis(1));
         assertThat(waitingQueueService.sweepStale()).isEqualTo(1);
         assertThat(waitingCount()).isZero();
-        assertThat(seenCount()).isZero();
+        assertThat(pollDeadlineCount()).isZero();
     }
 
     @Test
@@ -143,11 +147,11 @@ class QueueLeaveTest {
     void pollingKeepsTheWaiterAlive() {
         Ticket ticket = waitingQueueService.enqueue();
 
-        // stale-timeout을 훌쩍 넘겨 놓되, 중간에 한 번 조회한다.
-        clock.advance(properties.staleTimeout().minusSeconds(1));
+        // 기한을 아슬아슬하게 남겨 놓고 한 번 조회하면, 거기서부터 기한이 다시 밀린다.
+        clock.advance(frontDeadline().minusSeconds(1));
         status(ticket);
 
-        clock.advance(properties.staleTimeout().minusSeconds(1));
+        clock.advance(frontDeadline().minusSeconds(1));
         assertThat(waitingQueueService.sweepStale()).isZero();
         assertThat(waitingCount()).isEqualTo(1);
 
@@ -159,13 +163,13 @@ class QueueLeaveTest {
     @Test
     @DisplayName("진입만 하고 한 번도 조회하지 않은 대기자도 회수된다")
     void sweeperRemovesWaitersThatNeverPolled() {
-        // 첫 조회는 0~폴링주기 사이로 무작위로 늦춰지므로(waiting.js) 그 사이에 떠나면
-        // 조회가 한 번도 없는 항목이 남는다. enqueue.lua가 진입 시각을 seen에 찍지 않으면
+        // 첫 조회는 0~하한 주기 사이로 무작위로 늦춰지므로(waiting.js) 그 사이에 떠나면
+        // 조회가 한 번도 없는 항목이 남는다. enqueue.lua가 첫 기한을 미리 찍지 않으면
         // 이 사람은 스위퍼에 영영 걸리지 않는다.
         waitingQueueService.enqueue();
-        assertThat(seenCount()).isEqualTo(1);
+        assertThat(pollDeadlineCount()).isEqualTo(1);
 
-        clock.advance(properties.staleTimeout().plusSeconds(1));
+        clock.advance(frontDeadline().plusSeconds(1));
 
         assertThat(waitingQueueService.sweepStale()).isEqualTo(1);
         assertThat(waitingCount()).isZero();
@@ -181,7 +185,7 @@ class QueueLeaveTest {
             waitingQueueService.enqueue();
         }
 
-        clock.advance(properties.staleTimeout().plusSeconds(1));
+        clock.advance(frontDeadline().plusSeconds(1));
 
         assertThat(waitingQueueService.sweepStale()).isEqualTo(properties.maxSweep());
         assertThat(waitingCount()).isEqualTo(1);
@@ -189,6 +193,14 @@ class QueueLeaveTest {
         // 남은 인원은 다음 주기에 빠진다.
         assertThat(waitingQueueService.sweepStale()).isEqualTo(1);
         assertThat(waitingCount()).isZero();
+    }
+
+    /**
+     * 여기 대기자는 모두 맨 앞이거나 조회한 적이 없어 주기가 하한이다. 그래서 이탈 기한도 하나다.
+     * 순번에 따라 기한이 갈라지는 쪽은 {@link PollIntervalTest}가 본다.
+     */
+    private Duration frontDeadline() {
+        return properties.minPollInterval().plus(properties.pollGrace());
     }
 
     private Status status(Ticket ticket) {
@@ -199,8 +211,8 @@ class QueueLeaveTest {
         return count(QueueKeys.waiting(windowId()));
     }
 
-    private long seenCount() {
-        return count(QueueKeys.seen(windowId()));
+    private long pollDeadlineCount() {
+        return count(QueueKeys.pollDeadline(windowId()));
     }
 
     private long activeCount() {
