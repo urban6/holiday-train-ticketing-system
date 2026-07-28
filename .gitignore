@@ -7,3 +7,7 @@
 .idea/
 .vscode/
 *.iml
+
+### 시크릿 ###
+# 채운 환경 변수 파일. 템플릿(env.example)만 커밋한다.
+infra/aws/env

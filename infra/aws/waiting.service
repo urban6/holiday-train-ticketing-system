@@ -1,0 +1,37 @@
+# WAS를 systemd로 띄운다.
+#
+#   sudo install -m 644 waiting.service /etc/systemd/system/waiting.service
+#   sudo systemctl daemon-reload && sudo systemctl start waiting
+#   journalctl -u waiting -f
+#
+# 명령행이 아니라 EnvironmentFile로 값을 넘기는 이유는 비밀번호다.
+# --spring.datasource.password=... 로 넘기면 ps aux와 /proc/*/cmdline에 평문으로 보인다.
+
+[Unit]
+Description=Holiday train ticketing WAS
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=waiting
+Group=waiting
+WorkingDirectory=/opt/waiting
+
+EnvironmentFile=/etc/waiting/env
+Environment=SPRING_PROFILES_ACTIVE=loadtest
+
+# 힙을 고정한다. 기본값은 물리 메모리의 1/4이라, 인스턴스를 large → xlarge → 2xlarge로
+# 키우며 쓸면 힙도 함께 커진다. 스윕의 목적이 vCPU당 처리량인데 힙이 같이 움직이면
+# 무엇이 처리량을 바꿨는지 갈라낼 수 없다. 대기열은 상태를 앱에 두지 않아 2g면 넉넉하다.
+ExecStart=/usr/bin/java -Xms2g -Xmx2g -jar /opt/waiting/waiting-0.0.1.jar
+
+# 측정 중 자동 재기동은 워밍업 상태(JIT)를 날리면서 그 사실을 숨긴다.
+# 죽으면 죽은 채로 두고 그 런을 버리는 편이 낫다.
+Restart=no
+
+# VUS 수천이면 소켓만 그만큼이다. limits.d와 별개로 systemd 서비스에는 여기서 준다.
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
