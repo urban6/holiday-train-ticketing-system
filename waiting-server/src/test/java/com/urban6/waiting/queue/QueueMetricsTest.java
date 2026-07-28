@@ -29,6 +29,10 @@ import org.springframework.data.redis.core.StringRedisTemplate;
  */
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest(properties = {
+        // 샤드 하나로 고정한다. 지표가 shard 태그로 나뉘어 있어, 샤드가 여럿이면
+        // registry.get("queue.promoted").counter()가 여러 개를 찾아 터진다.
+        // 태그가 제대로 붙는지는 QueueShardingTest가 본다.
+        "queue.shard-count=1",
         // QueueLeaveTest와 같은 이유로 스케줄러를 사실상 멈춘다. 배경에서 승격이 끼어들면
         // 테스트가 직접 부른 주기의 증분과 섞여 어느 쪽이 올린 값인지 구분할 수 없다.
         "queue.promote-interval=1h",
@@ -60,8 +64,8 @@ class QueueMetricsTest {
     @AfterEach
     void clearWindow() {
         redis.delete(List.of(
-                QueueKeys.waiting(windowId()), QueueKeys.seq(windowId()),
-                QueueKeys.active(windowId()), QueueKeys.pollDeadline(windowId())));
+                QueueKeys.waiting(windowId(), 0), QueueKeys.seq(windowId(), 0),
+                QueueKeys.active(windowId(), 0), QueueKeys.pollDeadline(windowId(), 0)));
     }
 
     @Test

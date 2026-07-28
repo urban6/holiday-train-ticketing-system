@@ -31,7 +31,11 @@ import org.springframework.data.redis.core.StringRedisTemplate;
  * 먼 미래에서 시작하면 창(windowId)이 실제 날짜와 어긋난다.
  */
 @Import(TestcontainersConfiguration.class)
-@SpringBootTest
+@SpringBootTest(properties = {
+        // 샤드 하나로 고정한다. TTL 체인은 샤드와 무관하지만, admit() 헬퍼가 승격을 부르므로
+        // 대상이 어느 샤드에 들어갔는지 알아야 한다.
+        "queue.shard-count=1"
+})
 class ReservationDeadlineTest {
 
     @TestConfiguration(proxyBeanMethods = false)
@@ -59,8 +63,8 @@ class ReservationDeadlineTest {
     void clearWindow() {
         String windowId = dailyWindow.at(clock.instant()).windowId();
         redis.delete(java.util.List.of(
-                QueueKeys.waiting(windowId), QueueKeys.seq(windowId),
-                QueueKeys.active(windowId), QueueKeys.pollDeadline(windowId)));
+                QueueKeys.waiting(windowId, 0), QueueKeys.seq(windowId, 0),
+                QueueKeys.active(windowId, 0), QueueKeys.pollDeadline(windowId, 0)));
     }
 
     @Test
@@ -112,13 +116,13 @@ class ReservationDeadlineTest {
         waitingQueueService.release(ticket.windowId(), ticket.token());
 
         assertThat(waitingQueueService.activeUntil(ticket.windowId(), ticket.token())).isEmpty();
-        assertThat(redis.opsForZSet().size(QueueKeys.active(ticket.windowId()))).isZero();
+        assertThat(redis.opsForZSet().size(QueueKeys.active(ticket.windowId(), 0))).isZero();
     }
 
     /** 진입 → 승격 → 입장 확정. 로그인 직전까지의 상태를 만든다. */
     private Ticket admit() {
         Ticket ticket = waitingQueueService.enqueue();
-        waitingQueueService.promote();
+        waitingQueueService.promote(0);
         waitingQueueService.claim(ticket.windowId(), ticket.token());
         return ticket;
     }
