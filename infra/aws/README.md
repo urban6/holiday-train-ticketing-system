@@ -25,6 +25,12 @@ k6는 WAS의 프라이빗 IP로 직접 붙습니다.
 | WAS | `c8g.large` (2 vCPU · 4 GiB) → 키우며 스윕 | 작게 시작해야 포화됩니다. `large → xlarge → 2xlarge` 스윕이 곧 vCPU당 처리량 측정이고, 그게 2단계 계획의 근거가 됩니다 |
 | Redis | `c8g.large` (2 vCPU · 4 GiB) | 단일 스레드·단일 핫 키라 코어를 늘려도 안 늡니다. 필요한 건 단일코어 클럭과 PPS |
 | RDS | `db.t4g.micro` | 대기열 hot path에 걸리지 않습니다. Hikari `maximum-pool-size: 10`이 이미 상한입니다 |
+| Kafka | `c8g.xlarge` (4 vCPU) | Kafka 경유 진입을 잴 때만 띄웁니다. WAS·Redis보다 큰 이유는 맨 위 원칙과 같습니다 — 브로커는 측정 대상이 아니라 측정 장비 쪽입니다 |
+
+**Kafka 브로커에 `large`를 쓰면 안 됩니다.** 브로커가 받는 초당 메시지 수는 진입 요청 수와 같아서
+8대 포화(**138,548 req/s**)를 그대로 맞습니다. 그 지점에서 브로커가 먼저 막히면 재려던 Redis 대신
+브로커를 재게 되고, 유입률이 안 오르는 이유를 `ingest-per-second` 상한 탓으로 잘못 읽게 됩니다.
+런마다 브로커 CPU를 함께 확인하고 **70%를 넘으면 그 런은 버립니다.**
 
 Graviton(ARM)을 고른 이유는 개발 머신이 Apple Silicon이라 **아키텍처가 같아 비교가 깨끗**해서입니다.
 OS는 **Ubuntu 26.04 LTS (arm64)**이고, 아래 설치 명령이 전부 `apt` 기준인 이유입니다.
@@ -60,6 +66,7 @@ Spring Security를 쓰지 않고, actuator `/metrics`에 인증이 없고,
 | WAS | 8080 | k6 보안 그룹 + 내 IP |
 | Redis | 6379 | WAS 보안 그룹 + **k6 보안 그룹** |
 | RDS | 5432 | **WAS 보안 그룹만** |
+| Kafka | 9092 | **WAS 보안 그룹만** (프로듀서·컨슈머 둘 다 WAS 안에 있습니다) |
 | 전부 | 22 | 내 IP (또는 SSM Session Manager로 대체) |
 
 **Redis 6379에 k6도 넣어야 합니다.** [measure.sh](measure.sh)가 k6 인스턴스에서 `redis-cli -h $REDIS_HOST`로
@@ -74,7 +81,8 @@ SG=<security-group-id>
 aws ec2 authorize-security-group-ingress --group-id $SG --ip-permissions \
   "IpProtocol=tcp,FromPort=8080,ToPort=8080,UserIdGroupPairs=[{GroupId=$SG}]" \
   "IpProtocol=tcp,FromPort=6379,ToPort=6379,UserIdGroupPairs=[{GroupId=$SG}]" \
-  "IpProtocol=tcp,FromPort=5432,ToPort=5432,UserIdGroupPairs=[{GroupId=$SG}]"
+  "IpProtocol=tcp,FromPort=5432,ToPort=5432,UserIdGroupPairs=[{GroupId=$SG}]" \
+  "IpProtocol=tcp,FromPort=9092,ToPort=9092,UserIdGroupPairs=[{GroupId=$SG}]"   # Kafka 경유 측정 때만
 aws ec2 authorize-security-group-ingress --group-id $SG \
   --protocol tcp --port 8080 --cidr <내 IP>/32     # 브라우저·actuator 확인용
 ```
@@ -100,6 +108,7 @@ cp provision.env.example provision.env   # 최초 1회 — AMI_ID·서브넷·�
 vi provision.env
 ./provision.sh was 8                     # WAS 8대
 ./provision.sh redis
+./provision.sh kafka --wait              # Kafka 경유 측정 때만
 ./provision.sh k6 --wait                 # 뜰 때까지 기다렸다 프라이빗 IP까지 출력
 ```
 
@@ -261,6 +270,7 @@ USERS=1500000 VUS=1000 ./measure.sh enqueue
 NO_REUSE=1 USERS=1500000 ./measure.sh enqueue   # 연결당 요청 1회 — 실제 오픈 순간에 가장 가깝다
 ./measure.sh status                  # 조회 폴링
 RATE=100000 DURATION=15s MAXVUS=10000 ./measure.sh burst   # 동시 도착 (open)
+./measure.sh mixed                   # 폴링 중에 스파이크 — 아래 「Kafka 경유 진입 검증」
 ```
 
 각 시나리오가 **서로 다른 것을 잰다는 것**, 워밍업이 왜 들어 있는지, `WARMUP=0`으로 이어 잴 때의
@@ -319,6 +329,91 @@ WAS_HOST=<nlb-dns> METRICS_HOST=<WAS1 프라이빗 IP> REDIS_HOST=<redis-private
     ./measure.sh enqueue
 ```
 
+## Kafka 경유 진입 검증
+
+`queue.enqueue-via-kafka`는 처리량 장치가 아닙니다. `enqueue.lua`와 `status.lua`가 Redis 단일
+스레드를 공유하기 때문에 **개시 스파이크가 이미 줄 서 있는 사람의 조회 지연으로 번지는 것**을
+막는 장치입니다. 그래서 확인할 것도 "처리량이 올랐나"가 아니라 **"진입을 잘라 낸 만큼이 조회에
+남는가"** 하나입니다.
+
+### 대수로 나누는 두 값
+
+**설정 전부가 WAS 1대 기준입니다.** 그대로 8대에 올리면 측정이 성립하지 않습니다.
+
+| 값 | 어디에 | 8대일 때 | 안 바꾸면 |
+| --- | --- | --- | --- |
+| `QUEUE_KAFKA_INGEST_PER_SECOND` | 대마다 `/etc/waiting/env` | **7500** (60000 ÷ 8) | 실효 유입률이 480,000/s가 되어 Redis 한계(약 140,000)의 3.4배입니다. 상한이 한 번도 안 걸려서 **"켰는데 아무 차이가 없다"**가 나오는데, 그건 Kafka가 아니라 이 줄 탓입니다 |
+| `queue.kafka.partitions` | `application.yml` (전 대 공통) | **32** (8대 × `consumers: 4`) | 컨슈머 32개 중 4개만 파티션을 받고 28개가 놉니다. `consumers <= partitions` 검증은 인스턴스 안에서만 보므로 **8대가 전부 멀쩡히 뜨고 경고도 없습니다.** 더 나쁜 건 재현성입니다 — 상한이 JVM별이라 그 4개가 몇 대에 흩어지느냐에 따라 유입률이 런마다 달라집니다 |
+
+`QUEUE_SCHEDULER_ENABLED`와 같은 종류의 제약이고, 빠뜨렸을 때 조용한 것도 같습니다.
+
+### 순서
+
+```bash
+# 1. 대마다 /etc/waiting/env 에 세 줄 (env.example 참고). 그 뒤 재기동.
+#      KAFKA_BOOTSTRAP_SERVERS=<kafka 프라이빗 IP>:9092
+#      QUEUE_ENQUEUE_VIA_KAFKA=true
+#      QUEUE_KAFKA_INGEST_PER_SECOND=7500
+sudo systemctl restart waiting
+
+# 2. 토픽이 32 파티션으로 생겼는지 브로커에서 확인 — 이게 위 표의 두 번째 함정을 잡는 유일한 지점
+/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic queue-enqueue
+
+# 3. k6 인스턴스에서. METRICS_HOSTS에 8대를 전부 줍니다 —
+#    queue.enqueue.dropped만 컨슈머가 있는 전 대에 흩어져 있습니다.
+export WAS_HOST=<nlb-dns> REDIS_HOST=<redis-ip>
+export METRICS_HOST=<WAS1 IP> METRICS_HOSTS=<WAS1 IP>,<WAS2 IP>,...,<WAS8 IP>
+
+./measure.sh mixed        # Kafka 켠 채로 / 끈 채로 각각
+```
+
+`mixed`는 깊이를 먼저 쌓고(`PREFILL`, 기본 100만 — **워밍업과 달리 지우지 않습니다**) 폴링을
+띄운 뒤 `SPIKE_AT`초에 진입 스파이크를 넣습니다. 빈 큐에서 시작하면 폴링 VU가 전부 큐 앞머리에
+서서 아무것도 재지 못하기 때문입니다.
+
+### 읽는 법
+
+k6 요약에서 조회 지연이 스파이크 전후로 갈려 나옵니다.
+
+```
+http_req_duration{phase:status,window:quiet}   스파이크 전 — 이 런의 기준선
+http_req_duration{phase:status,window:spike}   스파이크 중 — 번짐의 크기
+```
+
+**보는 값은 두 절대치가 아니라 둘의 비입니다.** 기준선을 같은 런에서 뽑는 것이 핵심입니다 —
+다른 런과 비교하면 JIT·페이지 캐시가 섞입니다. Kafka를 켜서 그 비가 1에 가까워지면 성공입니다.
+
+`measure.sh`가 찍는 **실효 유입률**이 그 다음입니다. k6가 보는 req/s는 접수(202)까지의 속도라
+상한과 무관하게 그대로 나오고, 상한이 실제로 걸렸는지는 이 값에서만 보입니다.
+
+| 나온 값 | 뜻 |
+| --- | --- |
+| 약 60,000/s | 상한이 걸렸습니다. 위 표의 두 값이 맞습니다 |
+| 약 480,000/s | `QUEUE_KAFKA_INGEST_PER_SECOND`를 대수로 안 나눴습니다 |
+| 런마다 흔들림 | `partitions`가 전체 컨슈머 스레드 수보다 적습니다 |
+
+검증 등식에는 항이 하나 붙습니다 — 접수(202)와 등록 사이에 컨슈머가 있고, 접수된 지
+`stale-after`를 넘긴 메시지는 버리기 때문입니다.
+
+```
+seq == 접수 응답 수(k6 요약의 accepted) - queue.enqueue.dropped
+```
+
+`dropped`가 0이 아니면 접수와 등록 사이가 `stale-after`(60초)보다 벌어졌다는 뜻입니다.
+보통 `ingest-per-second`를 **너무 작게** 나눈 경우입니다.
+
+> **런을 중간에 끊었다면 토픽을 비우고 다시 시작합니다.** `measure.sh`의 초기화는 Redis 키만
+> 지웁니다. 남은 메시지는 대부분 `stale-after`가 걸러 내지만 그만큼 `dropped`가 부풀어
+> 위 등식이 깨집니다. 브로커에서:
+> ```bash
+> sudo systemctl stop kafka   # 컨슈머가 붙어 있으면 오프셋 리셋이 거부됩니다
+> ```
+> 보다 간단하게는 WAS를 멈춘 뒤 브로커에서 오프셋을 끝으로 밀어 둡니다:
+> ```bash
+> /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 \
+>     --group queue-enqueue --topic queue-enqueue --reset-offsets --to-latest --execute
+> ```
+
 ## 로컬과 달라지는 변수
 
 **AWS에서 잰 값을 로컬에서 잰 값과 나란히 두면 안 됩니다.** 바뀌는 것이 한둘이 아닙니다.
@@ -342,6 +437,7 @@ Redis와 JVM은 **같은 메이저·같은 벤더 안의 차이**라 그대로 �
 ## 비용
 
 위 4대를 켜 두면 대략 **시간당 $0.5 안팎**입니다(리전마다 다르므로 확인이 필요합니다).
+Kafka 브로커(`c8g.xlarge`)를 더하면 시간당 $0.15 안팎이 붙고, Kafka 경유를 재는 동안에만 필요합니다.
 측정은 몰아서 하는 작업이라 **끝나면 stop**하면 EBS 요금만 남습니다.
 
 스팟은 쓰지 않습니다. 런 도중에 회수되면 그 런이 통째로 날아가고, 워밍업 60만 건부터 다시입니다.
