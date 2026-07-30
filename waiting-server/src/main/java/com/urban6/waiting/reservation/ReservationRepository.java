@@ -20,11 +20,8 @@ public class ReservationRepository {
     private final JdbcClient jdbcClient;
 
     /**
-     * 회원 행에 배타 잠금을 건다. 같은 회원의 동시 예약요청을 직렬화해 한도 검사(count)와 INSERT
-     * 사이에 다른 요청이 끼어드는 것을 막는다. 다른 회원은 서로 다른 행이라 병렬로 진행한다.
-     *
-     * <p>SELECT 결과 자체는 쓰지 않는다 — 이 호출의 목적은 잠금이다. 회원은 로그인 세션에서 온
-     * 존재하는 id라 결과 유무는 확인하지 않는다.
+     * 회원 행에 배타 잠금을 건다. 같은 회원의 동시 요청을 직렬화해 한도 검사(count)와 INSERT
+     * 사이에 다른 요청이 끼어드는 것을 막는다. SELECT 결과는 쓰지 않는다 — 목적은 잠금이다.
      */
     public void lockMember(long memberId) {
         jdbcClient.sql("SELECT id FROM member WHERE id = :memberId FOR UPDATE")
@@ -43,10 +40,9 @@ public class ReservationRepository {
     /**
      * 재고를 인원수만큼 원자적으로 차감한다. 초과예약을 막는 핵심이다.
      *
-     * <p>조건({@code remaining >= :passengers})과 차감을 한 UPDATE 문에 담는다. Postgres가 대상 행에
-     * 배타 잠금을 걸고, 앞선 트랜잭션이 커밋한 뒤 깨어난 요청은 최신 remaining으로 조건을 다시 평가한다
-     * (READ COMMITTED). 그래서 여러 요청이 동시에 들어와도 잔여석을 넘겨 팔지 않는다.
-     * SELECT로 읽고 앱에서 검사한 뒤 절대값으로 쓰는 방식은 이 보장을 깨뜨리므로 쓰지 않는다.
+     * <p>조건({@code remaining >= :passengers})과 차감을 한 UPDATE에 담는다. 앞선 트랜잭션이
+     * 커밋한 뒤 깨어난 요청은 최신 remaining으로 조건을 다시 평가한다(READ COMMITTED).
+     * <b>SELECT로 읽고 앱에서 검사한 뒤 절대값으로 쓰면 이 보장이 깨진다.</b>
      *
      * @return 갱신된 행 수. 1이면 차감 성공, 0이면 잔여 부족(또는 없는 조합)이라 매진이다.
      */
@@ -104,10 +100,8 @@ public class ReservationRepository {
     /**
      * 내 예약 하나를 취소(삭제)하고 어떤 좌석을 반납해야 하는지 돌려준다.
      *
-     * <p>{@code member_id} 조건이 소유권 검사를 겸한다 — 남의 예약 id를 넣어도 매치되는 행이 없다.
-     * DELETE ... RETURNING으로 삭제와 값 반환을 한 문장에 담아, 같은 예약을 동시에 두 번 취소해도
-     * 실제로 행을 지운 요청만 값을 받는다(다른 쪽은 빈 Optional). 반납은 그 요청만 하므로
-     * 재고가 두 번 늘지 않는다.
+     * <p>{@code member_id} 조건이 소유권 검사를 겸한다. DELETE ... RETURNING이라 같은 예약을
+     * 동시에 두 번 취소해도 실제로 행을 지운 요청만 값을 받아, 재고가 두 번 늘지 않는다.
      *
      * @return 삭제된 예약의 좌석 정보. 이미 없거나 남의 예약이면 빈 Optional.
      */

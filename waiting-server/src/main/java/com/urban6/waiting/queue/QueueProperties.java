@@ -60,8 +60,7 @@ public record QueueProperties(
                 "queue.max-poll-interval(%s)의 두 배가 queue.admission-grace(%s) 이상입니다. 승격을 알아챌 시간이 남지 않습니다."
                         .formatted(maxPollInterval, admissionGrace));
 
-        // 스윕 주기가 유예보다 길면, "이탈로 본다"고 정한 시간과 실제로 빠지는 시간이 어긋난다.
-        // 판정 기준이 설정값이 아니라 주기가 되어 버리므로 값을 읽고도 동작을 예측할 수 없다.
+        // 스윕 주기가 유예보다 길면 판정 기준이 설정값이 아니라 주기가 되어 버린다.
         require(sweepInterval.compareTo(pollGrace) < 0,
                 "queue.sweep-interval(%s)이 queue.poll-grace(%s) 이상입니다. 회수가 판정 기준보다 늦어집니다."
                         .formatted(sweepInterval, pollGrace));
@@ -70,10 +69,8 @@ public record QueueProperties(
         require(open.isBefore(close),
                 "queue.open이 queue.close보다 앞이어야 합니다: %s ~ %s".formatted(open, close));
 
-        // active 키의 TTL은 마감 + ACTIVE_GRACE인데, 멤버 score는 승격·claim·로그인으로 계속 밀린다.
-        // score가 키 TTL을 넘으면 개별 만료가 아니라 키가 통째로 사라져 활성 사용자 전원이
-        // 동시에 슬롯을 잃는다. 자정이나 마감 근처에만 재현되고 로그에 아무것도 남지 않으므로
-        // 값을 잘못 넣은 사람이 그때를 기다리지 않고 기동 시점에 알게 한다.
+        // 멤버 score가 active 키 TTL을 넘으면 키가 통째로 사라져 활성 사용자 전원이 동시에
+        // 슬롯을 잃는다. 마감 근처에만 재현되고 로그에 남지 않아 기동 시점에 알게 한다.
         Duration chain = admissionGrace.plus(sessionTtl).plus(reservationTtl);
         require(chain.compareTo(DailyWindow.Window.ACTIVE_GRACE) < 0,
                 "queue의 만료 체인(%s)이 활성 키 유예(%s) 이상입니다. active 키가 먼저 사라져 활성 사용자가 동시에 증발합니다."
@@ -86,15 +83,12 @@ public record QueueProperties(
      * <p>{@code 순번 / 승격 속도}가 남은 시간이고, 그것을 pollUpdates로 나눈 것이 주기다 —
      * 입장 전에 순번이 최소 그 횟수만큼 갱신된다는 뜻이다.
      *
-     * <p>승격 속도의 근거는 maxBatch / promoteInterval이다. promote.lua가 한 주기에 올리는 인원을
-     * maxBatch로 막고 있어서 큐가 이보다 빨리 줄어들 수 없고, 따라서 이 값으로 잰 남은 시간은
-     * 실제보다 짧다. 주기를 그 하한에 맞추면 자기 차례를 자면서 넘기는 일이 없다.
-     * 정상상태 회전 속도(capacity / 만료 체인)를 쓰면 반대로 남은 시간을 과대평가해서,
-     * 개시 시각처럼 정원이 통째로 비어 실제로 maxBatch씩 빠지는 구간에서 사람을 재운다.
+     * <p>승격 속도는 maxBatch / promoteInterval로 잡는다. 큐가 이보다 빨리 줄 수 없어 남은 시간을
+     * 과소평가하는 쪽이라, 자기 차례를 자면서 넘기지 않는다. 정상상태 회전 속도를 쓰면 반대로
+     * 과대평가해서 개시 시각처럼 정원이 통째로 비는 구간에서 사람을 재운다.
      *
-     * <p>Lua에 나누기를 넘기지 않고 여기서 접는 이유는 정수 나눗셈이다. promoteInterval(1s)을
-     * maxBatch로 먼저 나누면 max-batch가 1000을 넘는 순간 0이 되어, 모두가 하한에 붙고
-     * 이 기능이 아무 소리 없이 꺼진다. double로 한 번에 나누면 그 함정이 없다.
+     * <p><b>Lua에 나누기를 넘기지 않는 이유는 정수 나눗셈이다.</b> maxBatch가 1000을 넘는 순간
+     * 0이 되어 모두가 하한에 붙고 이 기능이 아무 소리 없이 꺼진다.
      */
     public double millisPerRank() {
         return (double) promoteInterval.toMillis() / maxBatch / pollUpdates;

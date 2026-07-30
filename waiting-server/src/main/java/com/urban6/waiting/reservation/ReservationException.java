@@ -2,9 +2,8 @@ package com.urban6.waiting.reservation;
 
 /**
  * {@link com.urban6.waiting.member.MemberException}과 같은 형태다.
- * {@code @RestControllerAdvice}는 붙이지 않는다 — 예약도 JSON API가 아니라 페이지 흐름이라,
- * 실패는 상태 코드가 아니라 예약 화면을 다시 그리며 안내 문구로 드러나야 하기 때문이다.
- * 컨트롤러가 이 예외를 잡아 플래시로 되돌린다.
+ * {@code @RestControllerAdvice}를 붙이지 않는 이유는 페이지 흐름이라 실패가 상태 코드가 아니라
+ * 안내 문구로 드러나야 하기 때문이다 — 컨트롤러가 잡아 플래시로 되돌린다.
  */
 public sealed class ReservationException extends RuntimeException {
 

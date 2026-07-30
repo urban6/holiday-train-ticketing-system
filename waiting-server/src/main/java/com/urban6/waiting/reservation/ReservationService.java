@@ -53,16 +53,11 @@ public class ReservationService {
      * 롤백되어 재고도 예약도 남지 않는다.
      *
      * <ol>
-     *   <li><b>회원 행 잠금</b> — 같은 회원의 동시 요청을 직렬화한다. 이게 없으면 두 요청이 모두
-     *       한도 미만을 읽어 6건을 넘길 수 있다(READ COMMITTED의 count 레이스).</li>
-     *   <li><b>한도 검사</b> — 값싼 count를 재고 차감보다 먼저 본다. 잠금 뒤라 앞선 커밋이 반드시
-     *       반영된 값을 읽는다.</li>
-     *   <li><b>재고 원자적 차감</b> — 조건부 UPDATE. 0행이면 매진이다. 서로 다른 회원 사이의
-     *       초과예약은 이 한 문장이 막는다.</li>
+     *   <li><b>회원 행 잠금</b> — 없으면 두 요청이 모두 한도 미만을 읽어 넘길 수 있다.</li>
+     *   <li><b>한도 검사</b> — 값싼 count를 재고 차감보다 먼저 본다.</li>
+     *   <li><b>재고 원자적 차감</b> — 조건부 UPDATE. 0행이면 매진. 회원 간 초과예약을 막는다.</li>
      *   <li><b>예약 INSERT</b>.</li>
      * </ol>
-     *
-     * <p>self-invocation이 아니라 컨트롤러가 이 메서드를 외부 호출해야 프록시가 트랜잭션을 건다.
      */
     @Transactional
     public void reserve(long memberId, long trainId, SeatClass seatClass, int passengers) {
@@ -89,8 +84,7 @@ public class ReservationService {
     /**
      * 예약을 취소한다. 소유권 검사·삭제·재고 반납을 한 트랜잭션으로 묶는다.
      *
-     * <p>삭제가 곧 소유권 검사다({@code member_id} 조건). 내 예약이 아니거나 이미 취소된 뒤라
-     * 지운 행이 없으면 반납하지 않고 실패로 알린다. 삭제로 슬롯도 함께 반납되므로(count가 줄어) 한도도 회복된다.
+     * <p>삭제가 곧 소유권 검사다({@code member_id} 조건). 지운 행이 없으면 반납하지 않고 실패로 알린다.
      */
     @Transactional
     public void cancel(long memberId, long reservationId) {

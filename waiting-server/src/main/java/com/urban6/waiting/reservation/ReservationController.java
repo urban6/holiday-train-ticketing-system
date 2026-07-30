@@ -21,9 +21,8 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 /**
  * 열차 조회와 예약. 대기열 → 입장 → 로그인을 모두 통과한 사용자만 도달한다.
  *
- * <p>이 컨트롤러의 모든 경로는 {@code WebConfig}에 등록된 게이트(AdmissionGuard/LoginGuard)를
- * 거친다. 여기 메서드 안에 입장권·로그인 검사가 없는 것은 빠뜨려서가 아니라 게이트가 앞단에 있기
- * 때문이다. 새 경로를 추가하면 반드시 WebConfig 화이트리스트에 등록해야 한다.
+ * <p>메서드 안에 입장권·로그인 검사가 없는 것은 빠뜨려서가 아니라 {@code WebConfig}의 게이트가
+ * 앞단에 있기 때문이다. <b>새 경로를 추가하면 반드시 그 화이트리스트에 등록해야 한다.</b>
  */
 @Controller
 @RequiredArgsConstructor
@@ -52,16 +51,15 @@ public class ReservationController {
 
         Member member = LoginSession.current(request).orElseThrow();
         model.addAttribute("member", member);
-        // 어느 탭을 펴고 그릴지. 취소 후 리다이렉트가 view=history로 예약내역 탭을 다시 연다.
+        // 취소 후 리다이렉트가 view=history로 예약내역 탭을 다시 연다.
         model.addAttribute("historyTab", "history".equals(view));
 
-        // AdmissionGuard가 통과시키며 남긴 값이다. 여기 오는 요청은 반드시 게이트를 거친다.
+        // AdmissionGuard가 통과시키며 남긴 값이다.
         long expiresAt = (long) request.getAttribute(AdmissionGuard.EXPIRES_AT);
         model.addAttribute("remainingMillis", Math.max(0, expiresAt - clock.millis()));
         // 화면에 숫자를 박아 두면 설정을 바꿀 때마다 화면이 거짓말을 하므로 설정값을 그대로 내린다.
         model.addAttribute("reservationSeconds", queueProperties.reservationTtl().toSeconds());
 
-        // 예약내역 탭이 그릴 내 예약 목록.
         model.addAttribute("reservations", reservationService.myReservations(member.id()));
 
         // 폼 제출값을 그대로 되돌려 놓아, 조회 후에도 입력이 남고 예약 버튼이 같은 조건을 실어 나른다.
@@ -106,9 +104,8 @@ public class ReservationController {
             redirect.addFlashAttribute("reserveError", e.getMessage());
         }
 
-        // 조회 조건을 쿼리스트링으로 되붙여 예약 후에도 같은 목록을 다시 본다.
-        // date/time은 LocalDate/LocalTime 객체 그대로 넣으면 RedirectView가 로케일 포맷으로
-        // 직렬화해(예: "26. 9. 24.") 되돌아오는 GET에서 ISO 파싱이 깨진다. ISO 문자열로 실어 보낸다.
+        // date/time을 객체 그대로 넣으면 RedirectView가 로케일 포맷으로 직렬화해
+        // (예: "26. 9. 24.") 되돌아오는 GET에서 ISO 파싱이 깨진다. ISO 문자열로 실어 보낸다.
         redirect.addAttribute("origin", origin);
         redirect.addAttribute("destination", destination);
         redirect.addAttribute("date", date != null ? date.toString() : null);

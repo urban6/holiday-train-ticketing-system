@@ -28,10 +28,7 @@ public class WaitingQueueRepository {
     @SuppressWarnings("rawtypes")
     private final RedisScript<List> promoteScript;
 
-    /**
-     * 순번을 발급하고 대기열에 등록한다.
-     * 두 작업은 Lua Script로 묶어서 실행한다.
-     */
+    /** 순번을 발급하고 대기열에 등록한다. 두 작업은 Lua로 묶는다. */
     public long enqueue(String windowId, String uuid, long firstPollDeadlineMillis,
                         Instant waitingDeadline, Instant seqDeadline) {
         Long seq = execute(enqueueScript, "대기열 진입", windowId,
@@ -51,11 +48,8 @@ public class WaitingQueueRepository {
      * 대기 순번과 입장 여부를 함께 읽는다.
      * 두 값 사이에 큐가 변하면 앞뒤 합이 어긋나므로 Lua Script로 묶어서 실행한다.
      *
-     * <p>대기 중이면 다음 폴링 기한을 찍는다 — 이 조회가 곧 하트비트다.
-     * 그래서 이름과 달리 순수 읽기가 아니다. 그 대가를 치른 이유는 status.lua 주석에 있다.
-     *
-     * <p>주기 설정을 함께 넘긴다. 순번이 스크립트 안에서 나오므로 주기를 여기서 미리 계산할 수
-     * 없고, 왕복을 두 번으로 쪼갤 수는 없다. promote가 같은 이유로 QueueProperties를 받는다.
+     * <p>대기 중이면 다음 폴링 기한을 찍는다 — 이 조회가 곧 하트비트라 이름과 달리 순수 읽기가
+     * 아니다. 근거는 status.lua 주석에 있다.
      */
     @SuppressWarnings("unchecked")
     public Snapshot status(String windowId, String uuid, long nowMillis, QueueProperties properties) {
@@ -114,8 +108,7 @@ public class WaitingQueueRepository {
     /**
      * 대기열에서 뺀다. 사용자가 팝업을 닫거나 페이지를 떠난 경우다.
      *
-     * <p>waiting과 폴링 기한 두 키에 걸치므로 Lua로 묶는다. active는 건드리지 않는다 —
-     * 이유는 leave.lua 주석에 있다.
+     * <p>두 키에 걸치므로 Lua로 묶는다. active는 건드리지 않는다(근거는 leave.lua 주석).
      *
      * @return 실제로 뺐으면 true. 이미 없었으면 false지만 호출자는 둘 다 성공으로 다룬다.
      */
@@ -130,11 +123,8 @@ public class WaitingQueueRepository {
     /**
      * 다음 폴링 기한이 지난 대기자를 회수한다.
      *
-     * <p>이탈 요청이 도달하지 못한 경우를 덮는다. 브라우저 이벤트가 아예 오지 않는 경로
-     * (크래시·기기 꺼짐·네트워크 단절)는 이것 말고 잡을 수단이 없다.
-     *
-     * <p>판정 기준을 여기서 빼지 않는다. 기한은 사람마다 다르고, 조회 때 그 사람에게 알려 준
-     * 주기에 담겨 score에 이미 구워져 있다.
+     * <p>브라우저 이벤트가 아예 오지 않는 경로(크래시·기기 꺼짐·네트워크 단절)를 덮는
+     * 유일한 수단이다. 기한은 사람마다 달라 조회 때 이미 score에 구워져 있다.
      *
      * @return 이번에 회수한 인원. maxSweep이 상한이다.
      */
@@ -149,9 +139,7 @@ public class WaitingQueueRepository {
 
     /**
      * 활성 슬롯을 즉시 비운다. 로그아웃처럼 사용자가 스스로 나가는 경우다.
-     *
-     * <p>만료를 기다리지 않고 여기서 지우는 만큼 정원이 그대로 앞당겨 회수된다.
-     * 단일 명령이라 Lua로 묶을 이유가 없다 — 원자성이 필요한 "세고 꺼내기"가 없다.
+     * 단일 명령이라 Lua로 묶지 않는다 — 원자성이 필요한 "세고 꺼내기"가 없다.
      */
     public void release(String windowId, String uuid) {
         run("입장권 반납", windowId, () -> redis.opsForZSet().remove(QueueKeys.active(windowId), uuid));
@@ -162,9 +150,7 @@ public class WaitingQueueRepository {
         return run(operation, windowId, () -> redis.execute(script, keys, (Object[]) args));
     }
 
-    /**
-     * Redis 예외를 도메인 예외로 옮기는 지점. 스크립트든 단일 명령이든 같은 방식으로 실패한다.
-     */
+    /** Redis 예외를 도메인 예외로 옮기는 지점. */
     private <T> T run(String operation, String windowId, Supplier<T> call) {
         try {
             return call.get();
@@ -183,10 +169,8 @@ public class WaitingQueueRepository {
     }
 
     /**
-     * status.lua의 한 스냅샷. rank는 0-based이며 대기 중이 아니면 -1이다.
-     * total은 대기 인원으로, 입장한 뒤에도 "지금 몇 명이 기다리는지"로 의미가 남는다.
-     * expireAt은 활성 만료 epoch ms이며, 활성이 아니면 -1이다.
-     * pollAfterMillis는 다음 조회까지 기다릴 시간이며, 대기 중이 아니면 0이다.
+     * status.lua의 한 스냅샷. rank는 0-based, expireAt은 활성 만료 epoch ms이며
+     * 각각 해당하지 않으면 -1이다. pollAfterMillis는 대기 중이 아니면 0.
      */
     public record Snapshot(long state, long rank, long total, long expireAt, long pollAfterMillis) {
 

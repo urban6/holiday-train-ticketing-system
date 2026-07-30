@@ -18,10 +18,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
- * 대기열을 통과한 사용자의 로그인.
- *
- * <p>이 컨트롤러의 모든 화면은 {@link WebConfig}에 등록된 인터셉터를 거친다.
- * 여기 메서드 안에 입장권 검사가 없는 것은 빠뜨려서가 아니라 게이트가 앞단에 있기 때문이다.
+ * 대기열을 통과한 사용자의 로그인. 입장권 검사가 메서드 안에 없는 것은 빠뜨려서가 아니라
+ * {@link WebConfig}의 게이트가 앞단에 있기 때문이다.
  */
 @Slf4j
 @Controller
@@ -37,14 +35,10 @@ public class AuthController {
     }
 
     /**
-     * <p>실패해도 상태 코드는 200이고 같은 화면을 다시 그린다. 리다이렉트로 돌려보내면
-     * 입력값을 세션이나 플래시에 실어 날라야 하는데, 폼 하나 때문에 그럴 이유가 없다.
+     * 실패해도 200으로 같은 화면을 다시 그린다. 아이디는 남기고 비밀번호는 비운다 —
+     * 비밀번호를 HTML에 되돌려 놓으면 브라우저 캐시·기록에 남는다.
      *
-     * <p>아이디는 남기고 비밀번호는 비운다. 다시 칠 때 아이디까지 치게 하는 건 번거롭기만 하고,
-     * 비밀번호를 HTML에 되돌려 놓는 건 브라우저 캐시·기록에 남을 이유를 만든다.
-     *
-     * <p>인증에 성공하면 예약 시간을 연다. 이 시점부터 queue.reservation-ttl 동안만
-     * 예약 화면에 머무를 수 있다.
+     * <p>성공하면 예약 시간을 연다. 이 시점부터 queue.reservation-ttl 동안만 머무를 수 있다.
      */
     @PostMapping("/login")
     public String login(@RequestParam String loginId,
@@ -67,8 +61,7 @@ public class AuthController {
         try {
             waitingQueueService.startReservation(pass.windowId(), pass.token());
         } catch (QueueException.Expired e) {
-            // 게이트 검사와 여기 사이에 슬롯이 회수됐다. 세션을 만들기 전에 걸러야
-            // "로그인은 됐는데 입장권은 없는" 상태가 생기지 않는다.
+            // 세션을 만들기 전에 걸러야 "로그인은 됐는데 입장권은 없는" 상태가 생기지 않는다.
             log.debug("예약 시간을 열지 못했다. 입장권이 이미 만료됐다.");
             return "redirect:" + AdmissionGuard.EXPIRED_REDIRECT;
         }
@@ -78,11 +71,8 @@ public class AuthController {
     }
 
     /**
-     * 게이트를 걸지 않는다. 입장권이 만료된 상태에서도 로그아웃은 되어야 한다 —
-     * 세션을 정리하러 온 사람을 자격이 없다고 돌려보내면 세션만 남는다.
-     *
-     * <p>세션과 함께 활성 슬롯도 반납한다. 만료를 기다리지 않으므로 뒷사람이 그만큼 빨리 들어오고,
-     * 로그아웃 후 다시 로그인해서 예약 시간을 새로 받는 경로도 함께 막힌다.
+     * 게이트를 걸지 않는다. 세션을 정리하러 온 사람을 자격이 없다고 돌려보내면 세션만 남는다.
+     * 세션과 함께 활성 슬롯도 반납해 뒷사람이 그만큼 빨리 들어온다.
      */
     @PostMapping("/logout")
     public String logout(HttpServletRequest request, HttpServletResponse response) {
