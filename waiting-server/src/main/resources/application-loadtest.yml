@@ -22,6 +22,16 @@ spring:
       # 기본값 60초. 포화 시 에러가 나는 게 아니라 그냥 매달린다.
       timeout: 1s
 
+  # 위 redis.timeout과 같은 축이다. queue.kafka.ack-timeout(3초)은 send()가 돌려준 뒤의
+  # 대기만 덮는데, 프로듀서 버퍼(buffer.memory 기본 32MB)가 차면 send() 자체가
+  # max.block.ms만큼 막히고 그 구간은 3초 밖이다. 기본값 60초를 그대로 두면 포화에서
+  # 요청이 실패하는 대신 1분씩 매달려, 재려던 p99가 그 대기 시간이 되어 버린다.
+  # enqueue-via-kafka가 false면 프로듀서가 아예 뜨지 않아 이 값은 읽히지 않는다.
+  kafka:
+    producer:
+      properties:
+        max.block.ms: 3000
+
 server:
   tomcat:
     # 기본 100. 100요청마다 커넥션이 끊기면 임시포트(16384개)와

@@ -85,7 +85,9 @@ export default function () {
     const res = http.post(`${BASE_URL}/api/v1/waiting-queue`, null, {
       tags: { phase: 'enqueue' },
     });
-    if (res.status !== 201) {
+    // 202는 Kafka를 거치는 경우다(queue.enqueue-via-kafka). 접수만 된 상태라 아직 순번이 없고,
+    // 아래 조회가 한동안 PENDING을 받는다 — 그 구간은 각 check가 state로 걸러 낸다.
+    if (res.status !== 201 && res.status !== 202) {
       fail(`진입 실패: ${res.status}`);
     }
     const body = res.json();

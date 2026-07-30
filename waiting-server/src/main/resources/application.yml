@@ -20,6 +20,25 @@ spring:
   # 세션 키는 기본 네임스페이스(spring:session:*)를 그대로 쓴다 — 대기열 키(*:holiday:*)와
   # 접두사가 겹치지 않아 measure.sh의 초기화(reset_queue)가 세션까지 지우지 않는다.
 
+  # queue.enqueue-via-kafka가 false면 컨슈머도 토픽 생성도 없어 브로커에 붙지 않는다.
+  # 프로듀서는 첫 전송에서야 연결하므로, 플래그를 끈 상태에서는 이 값이 틀려도 기동에 영향이 없다.
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      # 리더가 받았으면 접수로 본다. 단일 브로커라 all과 실질이 같고, 브로커가 죽으면 대기열이
+      # 유실되는 것은 Redis 영속성을 끈 결정과 같은 선택이다(README「Redis 장애 대응」).
+      # Kafka를 내구성 때문에 넣은 것이 아니다.
+      acks: 1
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    consumer:
+      group-id: queue-enqueue
+      # latest로 두면 컨슈머가 붙기 전에 접수된 사람이 통째로 사라진다 — 개시 직후가 정확히
+      # 그 구간이라, 가장 몰리는 순간의 진입만 유실되는 형태로 드러난다.
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
   datasource:
     # 5432가 아니라 5433이다. 이유는 infra/docker-compose.yml의 포트 주석 참고.
     url: ${DB_URL:jdbc:postgresql://localhost:5433/ticketing}
@@ -169,6 +188,88 @@ queue:
   # infra/aws/README.md의 "2단계로 넘어가기 전에" 절 참고 — 측정 도중 리더가 바뀌는 변수를
   # 아예 들이지 않기 위해서다.
   scheduler-enabled: ${QUEUE_SCHEDULER_ENABLED:true}
+
+  # 진입을 Kafka에 넘겨 Redis 유입률에 상한을 걸지. scheduler-enabled와 같은 배포 토폴로지 값이라
+  # QueueProperties(엄격 검증 레코드)에는 넣지 않는다.
+  #
+  # 처리량을 올리는 장치가 아니다. enqueue.lua와 status.lua가 Redis 단일 스레드를 공유하기 때문에,
+  # 개시 순간의 진입 스파이크가 이미 줄 서 있는 사람들의 순번 조회 지연으로 번지는 것을 막는 것이
+  # 목적이다. 진입 몫을 잘라 두면 그만큼이 폴링에 남는다.
+  #
+  # false면 도입 전과 완전히 같은 경로다 — 아래 queue.kafka 블록도 읽히지 않고 브로커도 필요 없다
+  # (EnqueueKafkaConfig가 조건부). 같은 jar에서 이 플래그만 바꿔 전후를 재기 위한 것이다.
+  # 따로 빌드해서 재면 빌드·세션이 바뀌는 변수가 섞인다(README「측정 결과」의 경고).
+  #
+  # 대가로 전역 전순서를 포기한다. 파티션이 여러 개이고 컨슈머가 병렬이므로 seq 발급 순서가 접수
+  # 순서와 어긋난다. 어차피 클라이언트→NLB→WAS 도착 순서가 네트워크 지연·재시도로 섞여 있어
+  # 전순서는 이미 명목적이라고 보고 고른 교환이다.
+  enqueue-via-kafka: ${QUEUE_ENQUEUE_VIA_KAFKA:false}
+
+  # enqueue-via-kafka가 true일 때만 읽는다. 그때는 이 블록이 없으면 기동에 실패한다.
+  kafka:
+    topic: queue-enqueue
+
+    # 파티션 수가 곧 컨슈머 병렬도의 상한이다(한 파티션은 그룹 안에서 컨슈머 하나만 받는다).
+    # 브로커 자동 생성에 맡기지 않고 KafkaAdmin이 이 값으로 만든다 — 자동 생성이면 브로커
+    # 기본값이 되어 여기 적은 값이 조용히 무시된다.
+    #
+    # 32인 것은 WAS 8대 × consumers 4 = 컨슈머 스레드 32개이기 때문이다. 컨슈머 그룹은
+    # 인스턴스가 아니라 클러스터 전체가 공유하므로, 세어야 하는 것은 한 대의 컨슈머 수가
+    # 아니라 전체 대수를 곱한 수다. 아래 consumers 검증은 인스턴스 안에서만 보기 때문에
+    # 여기가 모자라도 8대가 전부 멀쩡히 뜬다 — 경고 없이 남는 스레드가 놀 뿐이다.
+    #
+    # 그 상태의 진짜 대가는 노는 스레드가 아니라 재현성이다. ingest-per-second 상한이
+    # JVM별이라, 배정받은 파티션이 몇 대에 흩어지느냐에 따라 실효 유입률이 대수만큼
+    # 달라진다. 그 배정은 런마다 바뀌므로 같은 설정으로 잰 두 수치가 서로 달라진다.
+    # 스레드 수와 정확히 같게 두면 전원이 1개씩 받아 대당 몫이 고정된다.
+    #
+    # WAS 대수를 바꾸면 이 값도 함께 바꾼다(대수 × consumers). scheduler-enabled나
+    # ingest-per-second와 달리 클러스터 전체가 같은 값을 봐야 해서 환경변수로 빼지 않는다.
+    partitions: 32
+
+    # 이 인스턴스가 띄울 컨슈머 스레드 수. partitions보다 크면 기동에 실패한다(남는 쪽이 놀아서,
+    # 유입률이 올라갈 것이라 기대하고 늘렸다가 아무 변화도 못 보게 된다). 다만 그 검증은 이
+    # 인스턴스만 보므로, 다중화하면 위 partitions 주석대로 대수를 곱해 세야 한다.
+    #
+    # 4인 근거는 스레드당 예산이다. 전체 60,000/s를 32스레드가 나누면 스레드당 1,875/s,
+    # 곧 한 건에 533μs를 쓸 수 있다. 같은 AZ Redis 왕복이 그 절반쯤이라 여유가 있다.
+    # 대당 1개로 줄이면 예산이 133μs로 떨어져 Redis가 아니라 컨슈머 스레드가 먼저 막힌다 —
+    # 그러면 상한이 걸려서 느린 것인지 컨슈머가 못 따라가서 느린 것인지 구별할 수 없다.
+    consumers: 4
+
+    # Redis에 넣는 초당 상한. 이 값이 Kafka를 둔 이유 그 자체다.
+    #
+    # 근거 — 단일 Redis 실측 약 140,000 rps(README「Redis 처리량 한계 검증」) 중 순번 조회가
+    # 최대 약 70,000을 쓰므로(순번별 주기를 적용한 구간별 합산, 200만 명 기준) 진입에 줄 수 있는
+    # 몫이 60,000~70,000이다. 150만 명이면 개시 후 약 25초에 전원 등록이 끝난다.
+    #
+    # 로컬에서는 이 값을 그대로 쓸 이유가 없다 — k6·앱·Redis·Postgres·Kafka가 한 Mac에서 CPU를
+    # 나눠 쓰므로 절대 수치는 AWS에서 잰다. 로컬은 정합성 확인용이다.
+    #
+    # 상한은 인스턴스 안에서만 지켜진다. WAS를 다중화하면 Redis가 받는 실효 유입률이 대수만큼
+    # 곱해지므로, 이 값을 대수로 나눠 넣어야 한다 — scheduler-enabled와 같은 종류의 제약이다.
+    # 아래 값은 1대 기준이고, 다중화할 때는 QUEUE_KAFKA_INGEST_PER_SECOND로 덮는다
+    # (나눠 넣는 법은 infra/aws/env.example).
+    ingest-per-second: 60000
+
+    # 접수라고 답하기 전에 브로커의 응답을 이만큼 기다린다. 기다리지 않으면 브로커가 받지 못한
+    # 요청에도 202가 나가 "접수됐는데 대기열에 영원히 없는" 사람이 조용히 생긴다.
+    # 넘기면 Redis가 죽었을 때와 같은 503이다.
+    ack-timeout: 3s
+
+    # 접수된 지 이만큼을 넘긴 메시지는 대기열에 넣지 않고 버린다.
+    #
+    # 컨슈머가 밀린 사이에 창을 닫은 사람을 뒤늦게 넣으면, 폴링하지 않는 유령이 대기열에 쌓이고
+    # 스위퍼가 poll-grace를 기다린 뒤에야 걷어낸다 — 그동안 내내 뒷사람의 순번이 실제보다 뒤로
+    # 밀린다. 버린 수는 queue.enqueue.dropped로 나간다.
+    #
+    # 같은 값이 조회의 "아직 등록 전" 판정에도 쓰인다. 둘이 갈리면 컨슈머는 이미 버렸는데 화면은
+    # 계속 기다리거나, 반대로 화면이 포기한 뒤에 등록된다.
+    #
+    # poll-grace(60초)와 같은 축에서 잡았다. 그보다 오래 묶여 있던 사람은 어차피 첫 조회 기한을
+    # 이미 넘긴 상태다. 위 ingest-per-second에서 계산한 전원 등록 시간(약 25초)보다는 넉넉해야
+    # 한다 — 짧으면 정상적으로 밀린 사람까지 버린다.
+    stale-after: 60s
 
 # 예약 설정. queue와 마찬가지로 기본값을 코드에 두지 않아 이 블록이 없으면 기동에 실패한다.
 reservation:

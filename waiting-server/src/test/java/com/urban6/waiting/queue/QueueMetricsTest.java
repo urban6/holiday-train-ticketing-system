@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.urban6.waiting.TestcontainersConfiguration;
 import com.urban6.waiting.queue.ReservationDeadlineTest.MutableClock;
+import com.urban6.waiting.queue.schedule.AdmissionScheduler;
+import com.urban6.waiting.queue.schedule.StaleSweeper;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Instant;
 import java.util.List;

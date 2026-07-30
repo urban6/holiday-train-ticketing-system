@@ -49,5 +49,8 @@ export default function () {
   const res = http.post(`${BASE_URL}/api/v1/waiting-queue`, null, {
     headers: { 'Content-Type': 'application/json' },
   });
-  check(res, { '201 CREATED': (r) => r.status === 201 });
+  // 201과 202를 함께 받는다. 진입이 Redis로 바로 가면 201이고, Kafka를 거치면 접수만 된 것이라
+  // 202다(queue.enqueue-via-kafka). 같은 스크립트로 플래그 전후를 재는 것이 목적이라
+  // 한쪽만 통과시키면 그 순간 스크립트를 고쳐야 하고, 그러면 두 런이 같은 축에서 벗어난다.
+  check(res, { '201 CREATED 또는 202 ACCEPTED': (r) => r.status === 201 || r.status === 202 });
 }

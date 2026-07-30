@@ -28,12 +28,18 @@
 //                            loadtest 프로파일의 spring.data.redis.timeout: 1s를 먼저 의심한다.
 //
 // 절벽 자체보다 중요한 것은 거부될 때 대기열이 깨끗한가다. 런 뒤에 확인할 등식은
-// 보낸 요청 수가 아니라 성공한 201의 수를 기준으로 한다 —
+// 보낸 요청 수가 아니라 성공한 접수 응답의 수를 기준으로 한다 —
 // 거부가 TCP 단계에서 일어나면 enqueue.lua의 INCR이 아예 돌지 않기 때문이다.
 //
-//   seq == 201 응답 수
+//   seq == 접수 응답 수(201)
 //   ZCARD waiting + ZCARD active == seq
 //   ZCARD active <= queue.capacity
+//
+// queue.enqueue-via-kafka를 켜면 첫 줄이 달라진다. 접수(202)와 등록 사이에 컨슈머가 있고,
+// 접수된 지 stale-after를 넘긴 메시지는 등록하지 않고 버리기 때문이다. 버린 수는
+// actuator의 queue.enqueue.dropped에서 읽는다.
+//
+//   seq == 202 응답 수 - queue.enqueue.dropped
 //
 // 요청이 거부되는 것 자체는 정원 통제 시스템에서 설계된 동작이지 버그가 아니다.
 
@@ -65,5 +71,5 @@ export default function () {
   const res = http.post(`${BASE_URL}/api/v1/waiting-queue`, null, {
     headers: { 'Content-Type': 'application/json' },
   });
-  check(res, { '201 CREATED': (r) => r.status === 201 });
+  check(res, { '201 CREATED 또는 202 ACCEPTED': (r) => r.status === 201 || r.status === 202 });
 }

@@ -10,17 +10,15 @@ import org.springframework.stereotype.Component;
 /**
  * 대기열 상태를 actuator로 내보낸다.
  *
- * <p>부하를 재는 동안 큐가 어떤 모양인지 서버에서 확인할 방법이 없었다. loadtest 프로파일은
- * 로그를 warn으로 낮춰 승격·회수 로그마저 찍히지 않고, k6는 클라이언트 쪽(응답 시간·상태 코드)만
- * 본다. 정작 확인해야 하는 "정원이 지켜지는가"는 서버 안에 있다.
+ * <p>부하 측정 중에 큐 상태를 보는 유일한 경로다. loadtest 프로파일은 로그를 warn으로 낮추고,
+ * k6는 클라이언트 쪽만 본다 — "정원이 지켜지는가"는 서버 안에 있다.
  *
- * <p><b>요청 경로에는 아무것도 얹지 않는다.</b> 값은 스케줄러 주기(승격 1초 · 회수 5초)에만
- * 갱신되고, 그 값도 promote.lua가 이미 돌려주던 것이라 Redis 호출이 늘지 않는다.
- * 요청마다 로그를 켜면 큐가 아니라 로거를 측정하게 되는 것과 같은 이유다.
+ * <p><b>요청 경로에는 아무것도 얹지 않는다.</b> 값은 스케줄러 주기에만 갱신되고, 그 값도
+ * promote.lua가 이미 돌려주던 것이라 Redis 호출이 늘지 않는다.
  *
- * <p>{@code queue.promoted}는 대기열 총량 상한을 정하는 데 쓰는 값이다. 상한을 유도하려면
- * 슬롯 보유 시간이 필요한데, active ZSet의 score는 만료 시각이라 시작 시각이 없어 직접 잴 수 없다.
- * 대신 회전율을 센다 — {@code 누적 승격 ÷ 경과 시간 × 영업시간}이 곧 입장 가능 인원이다.
+ * <p>{@code queue.promoted}는 대기열 총량 상한을 정하는 데 쓴다. 슬롯 보유 시간을 직접 잴 수
+ * 없어(score가 만료 시각이라 시작 시각이 없다) 회전율로 대신한다 —
+ * {@code 누적 승격 ÷ 경과 시간 × 영업시간}이 곧 입장 가능 인원이다.
  */
 @Component
 public class QueueMetrics {
@@ -29,6 +27,7 @@ public class QueueMetrics {
     private final AtomicLong active = new AtomicLong();
     private final Counter promoted;
     private final Counter swept;
+    private final Counter enqueueDropped;
 
     public QueueMetrics(MeterRegistry registry) {
         Gauge.builder("queue.waiting", waiting, AtomicLong::get)
@@ -46,12 +45,15 @@ public class QueueMetrics {
         swept = Counter.builder("queue.swept")
                 .description("누적 유령 회수 인원. 이탈 판정이 얼마나 걷어내고 있는지 보여준다")
                 .register(registry);
+
+        enqueueDropped = Counter.builder("queue.enqueue.dropped")
+                .description("Kafka 경유 진입에서 버린 메시지. 접수됐지만 대기열에 없는 사람의 수다 — 조용히 버리면 원인을 찾을 수 없다")
+                .register(registry);
     }
 
     /**
-     * 판매 시간 밖에서는 승격이 조기 반환이라({@link WaitingQueueService#promote()})
-     * 게이지가 0으로 읽힌다. 측정은 영업시간 안에서 하므로 그대로 둔다 —
-     * 이걸 구분하자고 서비스가 돌려주는 형태를 바꾸지는 않는다.
+     * 판매 시간 밖에서는 승격이 조기 반환이라 게이지가 0으로 읽힌다.
+     * 측정은 영업시간 안에서 하므로 그대로 둔다.
      */
     public void recordPromotion(Promotion promotion) {
         waiting.set(promotion.waiting());
@@ -61,5 +63,10 @@ public class QueueMetrics {
 
     public void recordSweep(long count) {
         swept.increment(count);
+    }
+
+    /** 컨슈머가 진입 메시지를 버렸다 — 접수된 지 너무 오래됐거나 창이 지났다. */
+    public void recordEnqueueDropped() {
+        enqueueDropped.increment();
     }
 }

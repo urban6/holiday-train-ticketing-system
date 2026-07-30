@@ -263,6 +263,17 @@
                 return;
             }
 
+            // 접수는 됐지만 아직 대기열 등록 전이다(Kafka 경유 진입). 순번이 없으므로 숫자를
+            // 그리지 않는다 — 서버가 채워 보내는 0을 그대로 표시하면 "곧 내 차례"로 읽히는데
+            // 사실은 그 반대다. 등록되는 순간 다음 응답부터 WAITING으로 넘어간다.
+            if (body.state === 'PENDING') {
+                renderPending();
+                pollInterval = body.pollAfterMillis;
+                pollDelay = jitteredDelay(pollInterval, pollInterval * POLL_JITTER_RATIO);
+                timer = setTimeout(poll, pollDelay);
+                return;
+            }
+
             render(body);
 
             // 다음 주기는 서버가 정한다. 순번이 줄면 이 값도 함께 짧아진다.
@@ -335,6 +346,13 @@
         slots.position.textContent = '-';
         slots.behind.textContent = '-';
         status.textContent = '';
+    }
+
+    // 순번을 아직 모르는 상태. 진입 직후 화면과 같은 모양이라 숫자 처리는 resetFigures에 맡기고,
+    // 안내만 덧붙인다 — "확인 중"이 아니라 "접수됐다"고 알려야 사용자가 다시 신청하지 않는다.
+    function renderPending() {
+        resetFigures();
+        status.textContent = '접수됐습니다. 순번을 배정하는 중…';
     }
 
     // 조회 실패로 폴링을 멈추면 순번이 굳은 채로 남는다.
