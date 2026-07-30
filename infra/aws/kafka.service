@@ -1,0 +1,47 @@
+# Kafka 브로커를 systemd로 띄운다. KRaft 단일 노드(broker + controller 겸용)다.
+#
+#   sudo install -m 644 kafka.service /etc/systemd/system/kafka.service
+#   sudo systemctl daemon-reload && sudo systemctl start kafka
+#   journalctl -u kafka -f
+#
+# server.properties는 provision.sh가 부팅 시점에 만든다 — advertised.listeners에
+# 인스턴스의 프라이빗 IP가 들어가야 해서, 파일로 커밋해 둘 수가 없다.
+#
+# ZooKeeper를 두지 않는 것은 로컬 compose와 같은 이유다(infra/docker-compose.yml).
+# 측정에 얹는 변수를 하나 더 만들 이유가 없다.
+
+[Unit]
+Description=Kafka broker (KRaft single node) for queue ingest
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kafka
+Group=kafka
+WorkingDirectory=/opt/kafka
+
+# 힙을 고정하는 이유는 waiting.service와 같다. 브로커 인스턴스를 키우며 재는 경우
+# 기본값(물리 메모리의 1/4)이 함께 움직이면 무엇이 처리량을 바꿨는지 갈라낼 수 없다.
+#
+# 2g인 근거: 진입 메시지는 토큰 + windowId로 100바이트가 안 되고, 브로커는 이 부하를
+# 힙이 아니라 페이지 캐시로 받는다. 남은 메모리를 OS에 넘기는 편이 낫다.
+#
+# 따옴표가 필요하다. Environment=는 공백에서 다음 할당으로 넘어가므로, 안 씌우면
+# -Xmx2g가 조용히 버려지고 상한만 기본값(물리 메모리의 1/4)으로 돌아간다.
+# xlarge에서는 그 기본값이 마침 2g라 티가 안 나고, 인스턴스를 키우는 순간 드러난다 —
+# 고정하려던 바로 그 움직임이다. ExecStart는 argv로 갈라져서 이 문제가 없다.
+Environment="KAFKA_HEAP_OPTS=-Xms2g -Xmx2g"
+
+ExecStart=/opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/server.properties
+ExecStop=/opt/kafka/bin/kafka-server-stop.sh
+
+# waiting.service와 같은 이유로 자동 재기동을 하지 않는다. 측정 중에 브로커가 조용히
+# 되살아나면 그 런의 유입률이 왜 꺾였는지 로그에만 남고 수치에는 안 남는다.
+Restart=no
+
+# 파티션·세그먼트마다 파일을 연다. limits.d는 로그인 셸에만 걸려서 여기 또 적는다.
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

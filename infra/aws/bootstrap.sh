@@ -15,9 +15,9 @@ set -euo pipefail
 
 ROLE=${1:-}
 case "$ROLE" in
-    was | k6 | redis) ;;
+    was | k6 | redis | kafka) ;;
     *)
-        echo "usage: sudo $0 <was|k6|redis>" >&2
+        echo "usage: sudo $0 <was|k6|redis|kafka>" >&2
         exit 1
         ;;
 esac
@@ -95,6 +95,15 @@ WantedBy=multi-user.target
 EOF
     systemctl daemon-reload
     systemctl enable --now disable-thp.service
+fi
+
+# ── Kafka 전용 ────────────────────────────────────────────────────────────
+if [ "$ROLE" = kafka ]; then
+    # WAS와 같은 이유로 전용 계정이다. kafka.service의 User와 이름이 같아야 한다.
+    id -u kafka > /dev/null 2>&1 || useradd --system --home-dir /opt/kafka --shell /sbin/nologin kafka
+    # 브로커는 파티션·세그먼트마다 파일을 연다. 위 공통 nofile 65535는 로그인 셸에만
+    # 걸리고 systemd 유닛에는 안 걸려서, 같은 값을 kafka.service의 LimitNOFILE에 또 적는다.
+    install -d -o kafka -g kafka -m 755 /opt/kafka /var/lib/kafka /var/lib/kafka/data
 fi
 
 sysctl --system > /dev/null
