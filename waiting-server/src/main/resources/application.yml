@@ -5,13 +5,20 @@ spring:
   application:
     name: waiting
 
-  # 아래 네 값만 환경마다 바뀐다. 나머지 설정은 로컬과 AWS가 같다.
+  # 아래 네 값과 queue.scheduler-enabled(다섯째, WAS 다중화 시점에만 쓰는 배포 토폴로지 값)
+  # 만 환경마다 바뀐다. 나머지 설정은 로컬과 AWS가 같다.
   # 기본값은 로컬(infra/docker-compose.yml) 기준이라 clone 직후 그냥 뜬다.
   # AWS에서 덮는 방법은 infra/aws/env.example 참고 — 비밀번호는 명령행 인자로 넘기지 않는다.
   data:
     redis:
       host: ${REDIS_HOST:localhost}
       port: 6379
+
+  # spring.session.data.redis.repository-type의 기본값(default)이 이미 원하는 값이라
+  # 따로 적지 않는다 — INDEXED로 바꾸면 principal로 세션을 찾는 정렬 인덱스를 Redis에 추가로
+  # 관리하는데, 이 앱엔 그 기능이 없어 대기열 Redis에 불필요한 백그라운드 부하만 얹는다.
+  # 세션 키는 기본 네임스페이스(spring:session:*)를 그대로 쓴다 — 대기열 키(*:holiday:*)와
+  # 접두사가 겹치지 않아 measure.sh의 초기화(reset_queue)가 세션까지 지우지 않는다.
 
   datasource:
     # 5432가 아니라 5433이다. 이유는 infra/docker-compose.yml의 포트 주석 참고.
@@ -27,6 +34,26 @@ spring:
       maximum-pool-size: 10
 
 server:
+  tomcat:
+    # 톰캣이 재사용하려고 쥐고 있는 Http11Processor의 개수. 기본값은 200이다.
+    #
+    # 연결이 유휴↔활성을 오갈 때마다 여기서 꺼내 쓰고 돌려놓는데, 동시에 열린 연결이 이 값을
+    # 넘으면 대부분 새로 할당하고 버리게 된다. Processor 하나가 헤더 버퍼까지 물고 있어
+    # 그 쓰레기가 그대로 GC 부담이 되고, 힙이 아니라 CPU가 먼저 마른다.
+    #
+    # 기본값 200으로는 동시 연결이 수천 개인 순간에 무너진다. 대당 동시 연결 6,259개로 잰
+    # 실측(AWS, WAS 8대)에서 200 → 20000으로 올리자:
+    #   처리량      67,902 → 91,745 req/s   (+35%)
+    #   지연 중앙값    627 → 14.3 ms        (44배)
+    #   요청당 할당     80 → 45 KB          (-44%)
+    # 이 설정 하나만 바꾼 결과다. 근거는 README의 「측정 결과 — 측정하면서 찾아낸 문제」.
+    #
+    # 8192는 max-connections의 기본값과 맞춘 것이다 — 동시에 받는 연결만큼 있으면 되고
+    # 그보다 크게 잡을 이유가 없다는 톰캣 쪽 지침을 따른다.
+    #
+    # 부하 측정용 값이 아니라 운영에도 그대로 필요한 값이라 loadtest 프로파일이 아니라 여기 둔다.
+    processor-cache: 8192
+
   servlet:
     session:
       # 로그인 후에는 queue.reservation-ttl(3분)이 항상 먼저 끝나므로 이 값이 실제로
@@ -133,6 +160,15 @@ queue:
   # 한 주기에 회수할 최대 인원. max-batch와 같은 이유다 — Redis는 단일 스레드라
   # 대량 이탈이 한꺼번에 몰리는 순간 상한이 없으면 그 시간이 그대로 다른 요청의 지연이 된다.
   max-sweep: 500
+
+  # 이 인스턴스에서 승격·회수 스케줄러(AdmissionScheduler, StaleSweeper)를 돌릴지.
+  # 튜닝값이 아니라 배포 토폴로지 값이라 QueueProperties(엄격 검증 레코드)에는 넣지 않는다.
+  # WAS가 1대면 항상 true(기본값). WAS를 다중화하면 정확히 1대만 true여야 한다 — 인스턴스마다
+  # 돌면 승격·회수 주기가 인스턴스 수만큼 짧아져 max-batch/max-sweep으로 막으려던 지연
+  # 스파이크가 그대로 돌아온다. 리더 선출 대신 정적 플래그를 쓰는 이유는
+  # infra/aws/README.md의 "2단계로 넘어가기 전에" 절 참고 — 측정 도중 리더가 바뀌는 변수를
+  # 아예 들이지 않기 위해서다.
+  scheduler-enabled: ${QUEUE_SCHEDULER_ENABLED:true}
 
 # 예약 설정. queue와 마찬가지로 기본값을 코드에 두지 않아 이 블록이 없으면 기동에 실패한다.
 reservation:

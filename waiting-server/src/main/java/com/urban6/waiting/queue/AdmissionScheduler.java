@@ -3,6 +3,7 @@ package com.urban6.waiting.queue;
 import com.urban6.waiting.queue.WaitingQueueRepository.Promotion;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -17,10 +18,14 @@ import org.springframework.stereotype.Component;
  * <p><b>WAS를 다중화하면 이 스케줄러를 단일화해야 한다.</b> 인스턴스마다 돌면 승격 주기가
  * 인스턴스 수만큼 짧아진다. Lua가 원자적이라 정원을 넘기지는 않지만, 한 주기의 실효 배치가
  * N배가 되어 maxBatch로 막으려던 지연 스파이크가 그대로 돌아온다.
+ *
+ * <p>단일화는 {@code queue.scheduler-enabled}로 한다. WAS 여러 대 중 정확히 하나에만
+ * true를 준다 — 리더 선출을 쓰지 않는 이유는 application.yml의 같은 키 주석 참고.
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(name = "queue.scheduler-enabled", havingValue = "true", matchIfMissing = true)
 public class AdmissionScheduler {
 
     private final WaitingQueueService waitingQueueService;

@@ -2,6 +2,7 @@ package com.urban6.waiting.queue;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -22,10 +23,13 @@ import org.springframework.stereotype.Component;
  * <p><b>WAS를 다중화하면 이 스케줄러도 승격과 함께 단일화해야 한다.</b> 인스턴스마다 돌면
  * 회수 주기가 인스턴스 수만큼 짧아진다. Lua가 원자적이라 같은 사람을 두 번 지우지는 않지만,
  * 한 주기의 실효 배치가 N배가 되어 maxSweep으로 막으려던 지연 스파이크가 그대로 돌아온다.
+ *
+ * <p>단일화는 {@link AdmissionScheduler}와 같은 {@code queue.scheduler-enabled}를 공유한다.
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(name = "queue.scheduler-enabled", havingValue = "true", matchIfMissing = true)
 public class StaleSweeper {
 
     private final WaitingQueueService waitingQueueService;

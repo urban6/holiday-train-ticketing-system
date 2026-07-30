@@ -20,6 +20,13 @@ repositories {
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+	// 톰캣 인메모리 세션을 Redis로 옮긴다. WAS를 다중화하면 인스턴스마다 세션이 따로 놀아
+	// 로그인이 요청마다 풀리는데, 그때를 위한 선행 작업이다 (LoginSession.java 참고).
+	// Boot 4는 세션 자동 구성도 기술별 모듈로 쪼갰다. spring-session-data-redis(저장소 구현체)만
+	// 넣으면 라이브러리는 클래스패스에 있는데 자동 구성이 안 붙어 톰캣 인메모리 세션이 조용히
+	// 그대로 쓰인다 — flyway-core 때와 같은 함정이다. spring-boot-session-data-redis 하나면
+	// spring-boot-session·spring-session-data-redis·spring-boot-data-redis를 다 끌어온다.
+	implementation 'org.springframework.boot:spring-boot-session-data-redis'
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
 	implementation 'org.springframework.boot:spring-boot-starter-jdbc'
