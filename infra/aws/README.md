@@ -2,19 +2,17 @@
 
 > [← README](../../README.md)
 
-로컬(단일 Mac)에서는 더 쪼갤 수 없는 것이 하나 남아 있습니다. 앱 지연 35ms 중 Redis는 1~3ms이고
-나머지 90% 이상이 Tomcat·가상 스레드·루프백 TCP, 그리고 **같은 머신에서 도는 k6와의 CPU 경합**입니다.
-그래서 여기서 하는 일의 절반은 부하 생성기를 떼어내는 것입니다.
-
-## 두 단계로 나눕니다
+로컬(단일 Mac)에서는 더 쪼갤 수 없는 것이 하나 남아 있습니다. 앱 지연의 90% 이상이 Tomcat·가상 스레드·
+루프백 TCP, 그리고 **같은 머신에서 도는 k6와의 CPU 경합**입니다. 여기서 하는 일의 절반은 부하 생성기를
+떼어내는 것입니다.
 
 | | 구성 | 여기서 얻는 것 |
 | --- | --- | --- |
-| **1단계** | k6 · WAS 1대 · Redis · RDS (**NLB 없음**) | 로컬 34k를 대체하는 기준선. vCPU당 처리량 |
+| **1단계** | k6 · WAS 1대 · Redis · RDS (**NLB 없음**) | 기준선. vCPU당 처리량 |
 | **2단계** | + NLB · WAS N대 | NLB가 얹는 비용, 수평 확장 효율 |
 
-1단계에 NLB를 넣지 않는 이유는 두 가지입니다. WAS 1대의 천장을 모르는 상태에서는 N대의 이득을
-말할 수 없고, **NLB가 얹는 비용을 아는 것 자체가 측정 결과**라 기준선에 섞으면 분리해 낼 수 없습니다.
+1단계에 NLB를 넣지 않는 이유는 WAS 1대가 어디서 포화되는지 모르는 상태에서는 N대의 이득을 말할 수 없고,
+**NLB가 얹는 비용을 아는 것 자체가 측정 결과**라 기준선에 섞으면 분리해 낼 수 없기 때문입니다.
 k6는 WAS의 프라이빗 IP로 직접 붙습니다.
 
 ## 인스턴스
@@ -29,34 +27,27 @@ k6는 WAS의 프라이빗 IP로 직접 붙습니다.
 | RDS | `db.t4g.micro` | 대기열 hot path에 걸리지 않습니다. Hikari `maximum-pool-size: 10`이 이미 상한입니다 |
 
 Graviton(ARM)을 고른 이유는 개발 머신이 Apple Silicon이라 **아키텍처가 같아 비교가 깨끗**해서입니다.
-Redis가 실제로 천장이 되면 그때 `c8i`(x86)와 나란히 재 보는 것 자체가 측정거리입니다.
+OS는 **Ubuntu 26.04 LTS (arm64)**이고, 아래 설치 명령이 전부 `apt` 기준인 이유입니다.
 
-OS는 **Ubuntu 26.04 LTS (arm64)**입니다. 아래 설치 명령이 전부 `apt` 기준인 이유입니다.
+**Redis `maxmemory`는 프로젝트 `redis.conf`의 값을 그대로 씁니다.** 대기자 한 명이 `waiting`과 `poll`
+두 곳을 차지해([`enqueue.lua`](../../waiting-server/src/main/resources/redis/enqueue.lua)가 진입
+시점에 둘 다 씁니다) 실측 1인당 **276바이트**이고, 200만 명이면 약 **552 MiB**입니다.
+`noeviction`이라 넘으면 쓰기가 거부되고, 그건 버그가 아니라 설계된 동작이지만 측정 도중에 만나면
+그 런은 버려야 합니다.
 
-**Redis `maxmemory`는 1gb로 올립니다.** 목표가 200만 명인데 대기자 한 명이 `waiting`과 `poll`
-두 곳을 차지합니다([`enqueue.lua`](../../waiting-server/src/main/resources/redis/enqueue.lua)가
-진입 시점에 둘 다 씁니다). 로컬의 512mb로는 Redis 작업 메모리 여유가 남지 않습니다.
-`noeviction`이라 넘으면 쓰기가 거부되고, 그건 버그가 아니라 설계된 동작이라 조용히 진행되지
-않습니다 — 다만 측정 도중에 만나면 그 런은 버려야 합니다.
-
-**1인당 크기는 규모에 따라 줄어듭니다.**
-처음 잡았던 230바이트는 실측보다 작았습니다.
-
-| 규모 | `used_memory` | 1인당 |
-| --- | --- | --- |
-| 30만 | 89.38 MB | 312 B |
-| 100만 | 271.28 MB | **284 B** |
-| 200만 (추정) | 약 **568 MB** | — `maxmemory 1gb`의 55% |
-
-30만 한 점만으로 외삽하면 624MB로 과대추정됩니다. **두 점을 찍어야 기울기를 압니다.**
+> **워밍업까지 계산에 넣습니다.** `measure.sh`의 워밍업은 본 측정 전에 초기화되지만, 그 사이에는
+> 워밍업 인원이 통째로 올라가 있습니다. 대당 워밍업량을 유지하려고 WAS 대수에 비례해 늘리면
+> (8대면 480만 건) **1.32 GB로 1gb를 넘깁니다.** 8대 측정에서는 3gb로 올렸습니다.
 
 ## 배치 — 전부 같은 AZ
 
-**같은 VPC · 같은 AZ · 같은 서브넷에 두고, WAS와 Redis는 클러스터 배치 그룹에 넣습니다.**
+**같은 VPC · 같은 AZ · 같은 서브넷에 둡니다.**
 
 로컬에서 Docker 왕복 0.31ms가 "Redis가 실제로 일하는 8.37μs의 약 37배"였습니다.
-**크로스 AZ가 그 교훈의 AWS 판본입니다** —
-왕복 지연이 그대로 돌아오고 데이터 전송 비용까지 붙습니다.
+**크로스 AZ가 그 교훈의 AWS 판본입니다** — 왕복 지연이 그대로 돌아오고 데이터 전송 비용까지 붙습니다.
+
+**클러스터 배치 그룹은 쓰지 않았습니다.** 같은 AZ·같은 서브넷으로 충분했고, 배치 그룹은 용량 확보
+실패로 인스턴스가 아예 안 뜨는 실패 모드를 하나 더 얹습니다. 위 수치는 배치 그룹 없이 나온 값입니다.
 
 ## 보안 그룹이 유일한 방어선입니다
 
@@ -72,11 +63,11 @@ Spring Security를 쓰지 않고, actuator `/metrics`에 인증이 없고,
 | 전부 | 22 | 내 IP (또는 SSM Session Manager로 대체) |
 
 **Redis 6379에 k6도 넣어야 합니다.** [measure.sh](measure.sh)가 k6 인스턴스에서 `redis-cli -h $REDIS_HOST`로
-초기화(`--scan | xargs UNLINK`)와 검증(`ZCARD`·`INFO memory`)을 합니다. WAS만 열면 측정이 첫 줄에서 멈춥니다.
+초기화와 검증을 합니다. WAS만 열면 측정이 첫 줄에서 멈춥니다. 마찬가지로 **WAS 8080을 내 IP에만 열면
+k6가 붙지 못합니다** — 자기 참조 규칙이 따로 필요하고, 증상이 타임아웃이라 앱 문제로 보이기 쉽습니다.
 
 지금은 셋이 **보안 그룹 하나를 공유**하고 6379·5432를 자기 참조로 열어 두었습니다.
 역할별로 나누는 것보다 규칙이 적고, 1단계는 어차피 인스턴스가 짧게 살기 때문입니다.
-2단계에서 WAS가 N대가 되면 그때 역할별로 가릅니다.
 
 ```bash
 SG=<security-group-id>
@@ -88,13 +79,9 @@ aws ec2 authorize-security-group-ingress --group-id $SG \
   --protocol tcp --port 8080 --cidr <내 IP>/32     # 브라우저·actuator 확인용
 ```
 
-> **8080을 내 IP에만 열면 k6가 WAS에 붙지 못합니다.** 자기 참조 규칙이 따로 필요합니다 —
-> 위 표의 "k6 보안 그룹"이 그것인데, 실제로 이걸 빠뜨려 `curl`이 그대로 매달렸습니다.
-> 증상이 타임아웃이라 앱 문제로 보이기 쉽습니다.
-
 인증 없는 Redis를 `0.0.0.0/0`에 열면 스캐너가 붙는 데 몇 분 걸리지 않습니다.
-실수하기 가장 쉬운 지점입니다. **기본 보안 그룹을 그대로 쓰지 마십시오** — 계정에 따라
-`0.0.0.0/0`에 넓게 열려 있고, `run-instances`에서 `--security-group-ids`를 빠뜨리면 그게 붙습니다.
+**기본 보안 그룹을 그대로 쓰지 마십시오** — 계정에 따라 넓게 열려 있고,
+`run-instances`에서 `--security-group-ids`를 빠뜨리면 그게 붙습니다.
 RDS도 만들 때 붙은 보안 그룹이 다른 프로젝트 것이면 옮겨야 합니다.
 
 ```bash
@@ -104,10 +91,26 @@ aws rds modify-db-instance --db-instance-identifier <id> \
 
 ## 순서
 
+**빠른 경로:** 인스턴스를 새로 띄울 때마다 아래 1단계(부트스트랩 + 설치)를 손으로 반복하지
+않아도 됩니다. [provision.sh](provision.sh)가 user-data(cloud-init)로 같은 일을 부팅
+시점에 끝냅니다.
+
+```bash
+cp provision.env.example provision.env   # 최초 1회 — AMI_ID·서브넷·보안 그룹·키 페어
+vi provision.env
+./provision.sh was 8                     # WAS 8대
+./provision.sh redis
+./provision.sh k6 --wait                 # 뜰 때까지 기다렸다 프라이빗 IP까지 출력
+```
+
+JAR 배포와 DB 시크릿(2~3단계)은 여전히 손으로 합니다 — 둘 다 실행마다 값이 바뀌거나
+비밀번호를 다뤄서 user-data에 구우면 오히려 위험해집니다. 아래 1단계는 삭제하지 않고
+남겨 뒀습니다 — `provision.sh`가 내부적으로 정확히 이 순서를 user-data로 실행합니다.
+"왜 이 값이어야 하는가"는 이 절의 설명이 유일한 근거입니다.
+
 ### 1. 인스턴스마다 부트스트랩
 
-커널 한도를 맞추지 않으면 **부하 도구가 먼저 터지고 앱을 측정했다고 착각**하게 됩니다.
-로컬에서 `kern.ipc.somaxconn=1024`가 필요했던 것과 같은 부류입니다.
+커널·리소스 한도를 맞춥니다. 왜 필요한지는 [bootstrap.sh](bootstrap.sh) 헤더에 있습니다.
 
 ```bash
 sudo ./bootstrap.sh was      # WAS 인스턴스
@@ -121,7 +124,7 @@ sudo ./bootstrap.sh redis    # Redis 인스턴스
 | --- | --- |
 | WAS | Corretto 저장소 등록 후 `sudo apt install -y java-21-amazon-corretto-jdk postgresql-client` (아래) |
 | Redis | `sudo apt install -y redis-server` — 설정은 다음 절 |
-| k6 | **APT 저장소를 쓸 수 없습니다**(아래) — 릴리스 tarball + `sudo apt install -y redis-tools sysstat` (`redis-cli`만 씁니다 — `measure.sh`가 초기화와 검증에 필요로 합니다). 이 저장소도 클론해 둘 것 |
+| k6 | **APT 저장소를 쓸 수 없습니다**(아래) — 릴리스 tarball + `sudo apt install -y redis-tools sysstat`. 이 저장소도 클론해 둘 것 |
 
 > **`dl.k6.io/deb`에는 arm64가 없습니다.** `Release`의 `Architectures`가 `amd64 i386`이라
 > Graviton에서는 `apt install k6`가 "Unable to locate package"로 끝납니다.
@@ -136,8 +139,7 @@ sudo ./bootstrap.sh redis    # Redis 인스턴스
 > ```
 
 **JVM은 벤더를 로컬과 맞춥니다.** 배포판 기본 openjdk가 아니라 Corretto를 쓰는 이유는,
-같은 코드·같은 부하인데 1런과 3런이 1.8배 차이 나는 워밍업 민감도 때문입니다.
-JIT 구현이 다른 JVM을 섞으면 그 차이가 어디서 왔는지 갈라낼 수 없습니다.
+JIT 구현이 다른 JVM을 섞으면 워밍업으로 갈리는 차이가 어디서 왔는지 갈라낼 수 없기 때문입니다.
 
 ```bash
 wget -qO - https://apt.corretto.aws/corretto.key | sudo gpg --dearmor -o /usr/share/keyrings/corretto.gpg
@@ -157,14 +159,16 @@ Debian 패키징이 넣어 둔 `dir` · `logfile` · `pidfile`이 사라지는�
 반대로 `supervised`·`daemonize`는 **손댈 필요가 없습니다** — 유닛의 `ExecStart`가
 `--supervised systemd --daemonize no`를 커맨드라인으로 덮어씁니다.
 
-프로젝트 파일을 base로 두고 AWS 델타 하나(`maxmemory`)를 얹은 뒤, 그 세 줄만 덧붙입니다.
+프로젝트 파일을 base로 두고 그 세 줄만 덧붙입니다. `maxmemory`는 프로젝트 파일 값을 그대로 쓰되,
+워밍업까지 담기지 않는 규모라면(위 참고) 여기서 `sed`로 올립니다.
 
 ```bash
 # 원본은 한 번만 백업한다. 두 번째 실행에서 덮으면 이미 고친 것을 원본으로 남기게 된다.
 [ -f /etc/redis/redis.conf.debian-orig ] || sudo cp /etc/redis/redis.conf /etc/redis/redis.conf.debian-orig
 
 # 아래 redis.conf는 이 저장소의 infra/redis/redis.conf를 scp로 올려 둔 것이다.
-sed 's/^maxmemory 512mb$/maxmemory 1gb/' redis.conf > /tmp/redis.conf.new
+# WAS 8대(워밍업 480만 건)에서는 3gb가 필요했다. 그 미만이면 그냥 cp 해도 된다.
+sed 's/^maxmemory .*$/maxmemory 3gb/' redis.conf > /tmp/redis.conf.new
 cat >> /tmp/redis.conf.new <<'EOF'
 
 dir /var/lib/redis
@@ -181,49 +185,29 @@ sudo systemctl restart redis-server
 확인:
 
 ```bash
-redis-cli CONFIG GET maxmemory     # 1073741824
+redis-cli CONFIG GET maxmemory     # 위에서 지정한 값 (3gb면 3221225472)
 redis-cli CONFIG GET save          # 빈 문자열 (RDB 꺼짐)
 sudo ss -lntp | grep 6379          # 0.0.0.0:6379
 ```
 
+`redis-benchmark`는 Redis 인스턴스에 설치할 필요가 없습니다. k6 인스턴스의 `redis-tools`에 들어 있어
+거기서 `-h $REDIS_HOST`로 원격으로 때립니다 — 앱이 가는 것과 같은 네트워크 경로라 그편이 맞습니다.
+
 ### 2. DB 초기화와 환경 변수
 
-환경마다 바뀌는 값은 넷뿐입니다 — Redis 좌표, DB 좌표·계정, DB 비밀번호.
-`application.yml`에 `${REDIS_HOST:localhost}` 형태로 외부화 지점이 표시돼 있고,
-기본값은 로컬 기준이라 그 파일만 봐도 무엇을 덮어야 하는지 알 수 있습니다.
-
-**RDS는 애플리케이션 롤도 데이터베이스도 만들어 주지 않습니다.** 마스터 계정 하나만 줍니다.
-로컬에는 없던 단계인데, `docker-compose.yml`의 `POSTGRES_USER`·`POSTGRES_DB`는 컨테이너 진입점이
-롤과 데이터베이스를 함께 만들어 주기 때문입니다. Flyway는 **테이블**만 만듭니다.
-
-[init-db.sh](init-db.sh)가 롤·데이터베이스 생성부터 `/etc/waiting/env` 작성까지 합니다.
+[init-db.sh](init-db.sh)가 RDS에 애플리케이션 롤·데이터베이스를 만들고 `/etc/waiting/env`까지 씁니다.
+로컬에는 없던 단계인 이유와 `must be able to SET ROLE` 함정은 그 스크립트 헤더에 있습니다.
 
 ```bash
 RDS_HOST=<rds-endpoint> REDIS_HOST=<redis-private-ip> ./init-db.sh
 ```
 
-> **`CREATE DATABASE ... OWNER ticketing`은 그냥은 막힙니다.**
-> ```
-> ERROR:  must be able to SET ROLE "ticketing"
-> ```
-> PG16부터 다른 롤을 소유자로 지정하려면 그 롤로 SET ROLE 할 수 있어야 하는데,
-> RDS 마스터는 슈퍼유저가 아니라 `rds_superuser` 멤버라 자동으로 붙지 않습니다.
-> `GRANT ticketing TO <마스터> WITH ADMIN OPTION`이 선행되어야 합니다 — 스크립트에 들어 있습니다.
-
-손으로 채운다면 [env.example](env.example)을 복사합니다. `DB_USERNAME`에 넣는 것은
-마스터가 아니라 애플리케이션 롤입니다 — 마스터를 넣으면 앱이 `rds_superuser` 권한으로 돕니다.
+손으로 채운다면 [env.example](env.example)을 복사합니다 — 무엇을 왜 채우는지는 그 파일의 주석에 있습니다.
 
 ```bash
 sudo install -m 640 -o root -g waiting env.example /etc/waiting/env
-sudo vi /etc/waiting/env      # REDIS_HOST · DB_URL · DB_USERNAME · DB_PASSWORD
+sudo vi /etc/waiting/env
 ```
-
-> **비밀번호를 명령행 인자로 넘기지 마십시오.** `--spring.datasource.password=...`는
-> `ps aux`와 `/proc/*/cmdline`에 평문으로 그대로 보입니다. 같은 이유로 `EnvironmentFile`을 씁니다.
-
-`queue.*` 튜닝값은 여기 두지 않습니다. `application.yml`이 유일한 진실 원천이고 화면 문구도 그 값을
-읽습니다. 측정 중에 바꿀 때는 명령행 인자(`--queue.capacity=1000`)를 쓰며, 시크릿이 아니라
-`ps`에 보여도 무방합니다.
 
 ### 3. WAS 기동
 
@@ -251,6 +235,17 @@ java -Xms2g -Xmx2g -jar waiting-0.0.1.jar --spring.profiles.active=loadtest
 쓸면 힙도 함께 커집니다. 스윕의 목적이 vCPU당 처리량인데 힙이 같이 움직이면 무엇이 처리량을
 바꿨는지 갈라낼 수 없습니다.
 
+**톰캣 설정 둘은 이름이 비슷하지만 막는 것이 다릅니다.** 둘을 섞으면 원인을 못 짚습니다.
+
+| 설정 | 겨루는 대상 | 넘치면 |
+| --- | --- | --- |
+| `accept-count`(1000) | **연결이 도착하는 속도** — 커널 accept 큐 크기. 실효 백로그는 `min(이 값, net.core.somaxconn)` | 커널이 연결을 버려 클라이언트에 connection reset. `nstat -az TcpExtListenOverflows`로 센다 |
+| `processor-cache`(8192) | **동시에 열려 있는 연결 수** — 재사용할 `Http11Processor` 개수 | 조용히 느려진다. 오류가 안 나고 요청당 힙 할당만 늘어 GC가 CPU를 먹는다 |
+
+측정에서는 **`accept-count`는 한 번도 안 넘쳤고**(8대 전부 `ListenOverflows` 0), 대신
+`processor-cache` 기본값(200)이 동시 연결 6,000대에서 처리량을 35% 깎고 있었습니다.
+**증상이 오류가 아니라 지연이라 찾기 어렵습니다** — 근거는 [루트 README의 측정 결과](../../README.md#측정하면서-찾아낸-문제).
+
 > **시각 함정.** `QueueConfig.java`가 `ZoneId.of("Asia/Seoul")`을 하드코딩하므로 창 키
 > (`waiting:holiday:20260728`)는 서버 TZ에 흔들리지 않습니다. 다만 **EC2 기본 TZ는 UTC**라
 > 로그 타임스탬프가 9시간 어긋나 보입니다. `measure.sh`는 `TZ=Asia/Seoul date`로 명시해 안전합니다.
@@ -261,60 +256,72 @@ java -Xms2g -Xmx2g -jar waiting-0.0.1.jar --spring.profiles.active=loadtest
 # k6 인스턴스에서
 export WAS_HOST=10.0.1.20 REDIS_HOST=10.0.1.30
 
-./measure.sh enqueue                 # 진입 처리량 (closed — 천장은 CPU)
-USERS=1000000 VUS=1000 ./measure.sh enqueue
+./measure.sh enqueue                 # 진입 처리량 (closed — 포화되는 곳은 CPU)
+USERS=1500000 VUS=1000 ./measure.sh enqueue
+NO_REUSE=1 USERS=1500000 ./measure.sh enqueue   # 연결당 요청 1회 — 실제 오픈 순간에 가장 가깝다
 ./measure.sh status                  # 조회 폴링
-RATE=10000 DURATION=5s ./measure.sh burst   # 동시 도착 (open — 천장은 accept 큐)
+RATE=100000 DURATION=15s MAXVUS=10000 ./measure.sh burst   # 동시 도착 (open)
 ```
 
-**`enqueue`와 `burst`는 다른 천장을 잽니다. 같은 축에 두지 마십시오.**
-`burst`를 쓸 때는 **WAS 인스턴스에서** 런 전후로 accept 큐 초과를 함께 세야 원인이 확정됩니다 —
-클라이언트 쪽에는 connection reset으로만 보입니다.
+각 시나리오가 **서로 다른 것을 잰다는 것**, 워밍업이 왜 들어 있는지, `WARMUP=0`으로 이어 잴 때의
+주의사항은 [measure.sh](measure.sh) 헤더에 있습니다. 읽고 시작하십시오 — 여기서 갈린 수치는
+나란히 둘 수 없습니다.
 
-```bash
-nstat -az TcpExtListenOverflows TcpExtListenDrops TcpExtTCPReqQFullDrop
-```
+**`NO_REUSE=1`을 빠뜨리면 처리량을 34% 후하게 잡습니다.** 기본값으로 재면 VU 하나가 연결 하나를
+1,400번 넘게 우려먹는데, 실제 사용자는 각자 새 연결로 한 번 요청합니다.
 
-`TcpExtListenOverflows`만 오르고 `TcpExtTCPReqQFullDrop`이 0이면 SYN 큐가 아니라 accept 큐입니다.
-그리고 k6의 `dropped_iterations`가 0이 아니면 그 런의 rate는 읽지 마십시오 —
-서버가 아니라 **생성기의 한계**를 잰 것입니다.
-
-`measure.sh`는 **초기화 → 워밍업 → 초기화 → 본 측정 → 지표 수집** 순으로 돕니다.
-워밍업이 들어 있는 이유는 로컬에서 확인한 워밍업 민감도 때문입니다 —
-같은 코드·같은 부하인데 1런과 3런이 **1.8배** 차이 났고, 수백 건짜리 워밍업은 아무 효과가 없습니다.
-JIT 램프는 인스턴스를 바꿔도 사라지지 않습니다.
-
-재기동 없이 여러 조건을 이어서 잴 때는 `WARMUP=0`으로 끄고, 대신 **조건 순서를 바꿔 가며 번갈아**
-재야 합니다. 뒤 조건일수록 JVM이 더 데워져 유리해지기 때문입니다.
+**`burst`의 `MAXVUS`는 낮게 잡습니다.** 이건 서버가 아니라 **부하 생성기가 여는 동시 연결 수**입니다.
+5만까지 올리면 처리량이 오히려 27% 떨어지는데, 그건 서버의 성질이 아니라 그 조건이 만든 부하입니다.
+그리고 NLB(단일 IP) 대상이면 **임시 포트 55,536개가 동시 연결의 실질 상한**입니다.
 
 ## 2단계로 넘어가기 전에
 
-README의 [인프라 아키텍처](../../README.md#인프라-아키텍처)가 짚어 둔 두 가지에 각각 갈래가 있습니다.
+README의 [인프라 아키텍처](../../README.md#인프라-아키텍처)가 짚어 둔 두 가지 — **세션 외부화**와
+**스케줄러 단일화** — 는 이미 구현되어 있습니다. 배경은 `Member.java`와 `application.yml`의
+`queue.scheduler-enabled` 주석에 있습니다. 아래는 이 둘이 준비됐다는 전제로 WAS 2대를 실제로
+배치하는 방법입니다.
 
-- **세션 외부화**(`spring-session-data-redis`)를 붙이면 세션이 대기열과 **같은 Redis**에 들어갑니다.
-  측정 대상에 다른 워크로드를 섞는 셈이라, 별도 인스턴스나 최소한 다른 DB 인덱스로 분리하는 편이
-  측정 위생에 낫습니다.
-- **스케줄러 단일화**는 리더 선출보다 플래그가 낫습니다. 조건부 빈으로 N대 중 1대만 켜면 코드 변경이
-  거의 없고, **측정 도중 리더가 바뀌는 변수 자체가 사라집니다.** Redis 락은 그 변수를 다시 들여옵니다.
+### 인스턴스
 
-시크릿도 이때 옮길 지점이 옵니다. 지금은 인스턴스가 한 대이고 짧게 살아서 `/etc/waiting/env`로
-충분하지만, WAS가 N대가 되면 같은 파일을 N번 복사하게 되고 비밀번호를 바꿀 때도 N번 고쳐야 합니다.
-그때는 SSM Parameter Store에 SecureString으로 두고 부트스트랩에서 파일을 만들면 됩니다.
+WAS 2대 모두 **`c8g.large`로 시작**합니다. 1단계 기준선과 인스턴스 타입을 맞춰야 "대수 효과"와
+"코어 수 효과"가 섞이지 않습니다. `xlarge`로 스윕하는 건 대수 효과를 먼저 확인한 다음입니다.
+
+### NLB + 타깃 그룹
+
+내부(internal) NLB, TCP:8080 리스너, 타깃 타입 instance로 WAS1·WAS2를 등록합니다. NLB는 instance
+타깃 타입에서 클라이언트 소스 IP를 보존하므로, 기존 "WAS 8080 ← k6 SG" 규칙은 k6 트래픽에 그대로
+쓰입니다. 다만 **NLB 자체의 헬스체크**는 로드밸런서 노드의 사설 IP에서 오므로 k6 SG 규칙만으로는
+안 잡힙니다 — WAS SG 8080에 VPC(또는 NLB가 뜬 서브넷) CIDR을 허용하는 규칙을 추가로 열어야 합니다.
 
 ```bash
-aws ssm get-parameter --name /waiting/db-password --with-decryption \
-    --query Parameter.Value --output text
+aws ec2 authorize-security-group-ingress --group-id $SG \
+    --protocol tcp --port 8080 --cidr <VPC CIDR>   # NLB 헬스체크용
 ```
 
-**앱 코드도 의존성도 그대로입니다.** `spring-cloud-aws`를 붙이면 기동 경로에 스타터가 하나 늘고
-자동 구성이 따라오는데, 지금 필요한 것은 기동 전에 파일 한 줄을 만드는 일뿐입니다
-(CLAUDE.md의 "새 의존성 전에 측정에 미칠 영향부터" 규칙과 맞습니다).
-인스턴스 프로파일에 `ssm:GetParameter`와 해당 KMS 키의 `kms:Decrypt`만 주면 됩니다.
+### 시크릿 공유 — `init-db.sh`를 WAS2에서 다시 돌리면 안 됩니다
+
+[init-db.sh](init-db.sh)는 실행할 때마다 `ALTER ROLE ... PASSWORD`로 **새 비밀번호를 생성**합니다.
+WAS2에서 무심코 다시 돌리면 WAS1이 쓰던 비밀번호가 조용히 바뀌어 WAS1이 DB 인증 실패로 죽습니다.
+
+1. **WAS1에서만** `init-db.sh`를 실행합니다.
+2. 결과로 만들어진 `/etc/waiting/env`를 WAS2에 `scp`로 복사합니다(권한 640 root:waiting 유지).
+3. WAS2의 env 파일에 한 줄만 고쳐 적습니다: `QUEUE_SCHEDULER_ENABLED=false`.
+
+WAS1은 기본값(`true`, 또는 env 파일에서 줄 자체를 생략)을 그대로 둡니다 — 스케줄러는 WAS1에서만 돕니다.
+
+### 측정
+
+`WAS_HOST`에 NLB DNS를, `METRICS_HOST`에 스케줄러를 보유한 WAS1의 프라이빗 IP를 따로 줍니다
+(이유는 [measure.sh](measure.sh) 헤더 참고).
+
+```bash
+WAS_HOST=<nlb-dns> METRICS_HOST=<WAS1 프라이빗 IP> REDIS_HOST=<redis-private-ip> \
+    ./measure.sh enqueue
+```
 
 ## 로컬과 달라지는 변수
 
-**AWS에서 잰 값을 로컬에서 잰 값과 나란히 두면 안 됩니다.**
-바뀌는 것이 한둘이 아닙니다.
+**AWS에서 잰 값을 로컬에서 잰 값과 나란히 두면 안 됩니다.** 바뀌는 것이 한둘이 아닙니다.
 
 | 변수 | 로컬 | AWS |
 | --- | --- | --- |
@@ -325,12 +332,12 @@ aws ssm get-parameter --name /waiting/db-password --with-decryption \
 | Redis 버전 | 8.8.0 (Docker 이미지) | 8.0.5 (apt) |
 | JVM | Corretto 21.0.2 | Corretto 21.0.12 |
 | Redis CPU 상한 | 컨테이너 `cpus: "1.0"` | 인스턴스 2 vCPU (단일 스레드라 실제로는 1개) |
-| `maxmemory` | 512mb | 1gb |
 | DB | Docker PostgreSQL 18.4 | RDS PostgreSQL 18.3 |
+| `max_connections` | Docker 기본 100 | RDS 기본 79 → **300** (파라미터 그룹). WAS 8대 × Hikari 10이면 기본값으로는 8대째가 못 뜬다 |
 | 커널 백로그 | macOS `kern.ipc.somaxconn` | Linux `net.core.somaxconn` |
 
-Redis와 JVM은 **같은 메이저·같은 벤더 안의 차이**라 그대로 갑니다. 다만 워밍업 하나에 1.8배가
-갈리는 프로젝트라 기록은 남깁니다 — 나중에 설명되지 않는 차이가 나오면 여기부터 봅니다.
+Redis와 JVM은 **같은 메이저·같은 벤더 안의 차이**라 그대로 갑니다. 다만 기록은 남깁니다 —
+나중에 설명되지 않는 차이가 나오면 여기부터 봅니다.
 
 ## 비용
 
