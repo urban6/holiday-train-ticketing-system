@@ -28,6 +28,13 @@ const VUS = parseInt(__ENV.VUS || '200', 10);
 const BASE_URL = __ENV.BASE_URL || 'http://127.0.0.1:8080';
 
 export const options = {
+  // NO_REUSE=1이면 요청마다 연결을 새로 맺는다.
+  //
+  // 기본값(재사용)으로 재면 VU 하나가 연결 하나를 수천 번 우려먹어, 연결당 요청이 1,400을 넘는다.
+  // 그런데 실제 오픈 순간에는 사람마다 브라우저를 새로 열어 연결당 요청이 1이다.
+  // 그 차이가 처리량에 얼마나 드는지가 이 옵션으로 갈린다 — 켜고 끈 두 값의 차이가
+  // 곧 연결 수립 비용이고, 그것만 바뀌므로 다른 변수가 섞이지 않는다.
+  noConnectionReuse: __ENV.NO_REUSE === '1',
   scenarios: {
     rush: {
       executor: 'shared-iterations',
