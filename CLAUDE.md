@@ -76,7 +76,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ## 스택 · 구조
 - Spring Boot 4.1 · Java 21 **가상 스레드** · Redis 8(Docker, 1코어) · PostgreSQL 18(Docker, 호스트 포트 **5433**) · Flyway · Thymeleaf · k6.
 - 애플리케이션은 `server/`(Gradle), 패키지 `com.urban6.waiting` — `auth` / `queue` / `member` / `reservation` / `presentation`.
-- 인프라(Redis·Postgres)는 `infra/docker-compose.yml`, 부하 스크립트는 `k6/`.
+- 인프라(Redis·Postgres)는 `infra/docker-compose.yml`, 부하 스크립트는 `k6/`, 공부 기록은 `docs/`(README 끝 「참고」에서 링크).
 
 ## 명령어
 ```bash
