@@ -417,6 +417,17 @@ seq == 접수 응답 수(k6 요약의 accepted) - queue.enqueue.dropped
 >     --group queue-enqueue --topic queue-enqueue --reset-offsets --to-latest --execute
 > ```
 
+## 다음에 채울 측정
+
+README「측정 결과」의 셋은 재지 못하고 계산·추론으로 대신했습니다. 결론을 뒤집을 값은 아니지만,
+다시 잴 때 채워야 할 자리라 적어 둡니다.
+
+| 못 잰 것 | 지금 어떻게 대신했나 | 다시 재려면 |
+| --- | --- | --- |
+| 최대 부하 런의 `ops/sec` 피크 | 명령 수 총량에서 **계산**했습니다(약 68만/초). 초당 표본의 실측 피크가 아닙니다 | `measure.sh`가 찍는 `ops/sec 피크`를 그대로 기록 |
+| `mixed` 런의 Redis 포화 여부 | `measure.sh`가 런 전체 구간으로 CPU를 평균 내는데 스파이크는 그중 15초뿐이라, 나온 24.2%는 포화 여부를 말해 주지 않습니다 | 스파이크 구간만 잘라 CPU를 내도록 `measure.sh` 수정 |
+| 파티션별 메시지 분포 | 랜덤 UUID 키 + murmur2 해싱에서 **추론**했습니다. 실제로 세보지 않았습니다 | 런 중에 `kafka-consumer-groups.sh --describe`로 파티션별 LAG 편차 확인 |
+
 ## 로컬과 달라지는 변수
 
 **AWS에서 잰 값을 로컬에서 잰 값과 나란히 두면 안 됩니다.** 바뀌는 것이 한둘이 아닙니다.
