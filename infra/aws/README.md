@@ -36,7 +36,7 @@ Graviton(ARM)을 고른 이유는 개발 머신이 Apple Silicon이라 **아키�
 OS는 **Ubuntu 26.04 LTS (arm64)**이고, 아래 설치 명령이 전부 `apt` 기준인 이유입니다.
 
 **Redis `maxmemory`는 프로젝트 `redis.conf`의 값을 그대로 씁니다.** 대기자 한 명이 `waiting`과 `poll`
-두 곳을 차지해([`enqueue.lua`](../../waiting-server/src/main/resources/redis/enqueue.lua)가 진입
+두 곳을 차지해([`enqueue.lua`](../../server/src/main/resources/redis/enqueue.lua)가 진입
 시점에 둘 다 씁니다) 실측 1인당 **276바이트**이고, 200만 명이면 약 **552 MiB**입니다.
 `noeviction`이라 넘으면 쓰기가 거부되고, 그건 버그가 아니라 설계된 동작이지만 측정 도중에 만나면
 그 런은 버려야 합니다.
@@ -223,7 +223,7 @@ sudo vi /etc/waiting/env
 ```bash
 sudo install -m 644 waiting.service /etc/systemd/system/waiting.service
 sudo install -m 644 -o waiting -g waiting \
-     waiting-server/build/libs/waiting-0.0.1.jar /opt/waiting/
+     server/build/libs/waiting-0.0.1.jar /opt/waiting/
 sudo systemctl daemon-reload && sudo systemctl start waiting
 
 journalctl -u waiting -f

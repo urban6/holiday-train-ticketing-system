@@ -70,12 +70,12 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 명절 승차권 예매를 가정한 대규모 예약 시스템 **학습** 프로젝트. 목적은 기능 완성이 아니라
 **대규모 트래픽에서 병목이 어디서 어떤 모양으로 나타나는지 측정하고, 변경 전후를 비교**하는 것.
-설계 결정과 트레이드오프의 진실 원천은 항상 `README.md`와 `waiting-server/src/main/resources/application.yml`의
+설계 결정과 트레이드오프의 진실 원천은 항상 `README.md`와 `server/src/main/resources/application.yml`의
 주석이다 — 코드를 고치기 전에 먼저 읽는다.
 
 ## 스택 · 구조
 - Spring Boot 4.1 · Java 21 **가상 스레드** · Redis 8(Docker, 1코어) · PostgreSQL 18(Docker, 호스트 포트 **5433**) · Flyway · Thymeleaf · k6.
-- 애플리케이션은 `waiting-server/`(Gradle), 패키지 `com.urban6.waiting` — `auth` / `queue` / `member` / `reservation` / `presentation`.
+- 애플리케이션은 `server/`(Gradle), 패키지 `com.urban6.waiting` — `auth` / `queue` / `member` / `reservation` / `presentation`.
 - 인프라(Redis·Postgres)는 `infra/docker-compose.yml`, 부하 스크립트는 `k6/`.
 
 ## 명령어
@@ -83,12 +83,12 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 # 인프라
 docker compose -f infra/docker-compose.yml up -d
 
-# 빌드 · 테스트 (waiting-server 안에서)
-cd waiting-server && ./gradlew bootJar
+# 빌드 · 테스트 (server 안에서)
+cd server && ./gradlew bootJar
 ./gradlew test          # Testcontainers가 테스트용 Postgres를 띄운다
 
 # 측정용 실행 — IDE Run 버튼이 아니라 반드시 jar + loadtest 프로파일
-java -jar waiting-server/build/libs/waiting-0.0.1.jar --spring.profiles.active=loadtest
+java -jar server/build/libs/waiting-0.0.1.jar --spring.profiles.active=loadtest
 ```
 
 ## 반드시 지킬 규칙 (어기면 조용히 깨진다)

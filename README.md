@@ -287,7 +287,7 @@ closed 모델에서 처리량 = `VUS ÷ 응답시간`이고(1000 ÷ 0.0577s = 17
 
 ### Redis 처리량 한계 검증
 
-8대의 138,548 rps는 앱을 빼고 같은 [`enqueue.lua`](waiting-server/src/main/resources/redis/enqueue.lua)를
+8대의 138,548 rps는 앱을 빼고 같은 [`enqueue.lua`](server/src/main/resources/redis/enqueue.lua)를
 `redis-benchmark`로 직접 잰 139,912 rps의 **99.0%**입니다. 앱 쪽에 짜낼 것이 1% 남았다는 뜻이고,
 이 구성의 상한을 정하는 것은 애플리케이션이 아니라 **Redis 한 대**입니다.
 넘기려면 WAS 증설도 앱 최적화도 아닌 Redis 측 분산(키 분리·클러스터)뿐입니다.
@@ -379,7 +379,7 @@ seq == 202 응답 수 - queue.enqueue.dropped
 동안에도 버려진 것이 없다는 뜻이고, `stale-after`(60초)가 그 지연보다 넉넉했다는 확인입니다.
 0이 아니었다면 `ingest-per-second`를 너무 작게 나눈 것입니다.
 
-`seq`가 정확히 맞는다는 것은 초당 13.8만 건이 쏟아지는 동안에도 [`enqueue.lua`](waiting-server/src/main/resources/redis/enqueue.lua)가
+`seq`가 정확히 맞는다는 것은 초당 13.8만 건이 쏟아지는 동안에도 [`enqueue.lua`](server/src/main/resources/redis/enqueue.lua)가
 `INCR`과 `ZADD`를 하나로 묶은 것이 지켜졌다는 뜻입니다.
 
 **과부하에서는 거부하지 않고 느려집니다.** 도착률을 처리 능력 위로 밀어도

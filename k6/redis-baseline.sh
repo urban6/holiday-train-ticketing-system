@@ -85,7 +85,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LUA="$REPO_ROOT/waiting-server/src/main/resources/redis/enqueue.lua"
+LUA="$REPO_ROOT/server/src/main/resources/redis/enqueue.lua"
 
 REDIS_HOST="${REDIS_HOST:-127.0.0.1}"
 REDIS_PORT="${REDIS_PORT:-6379}"

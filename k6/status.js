@@ -31,7 +31,7 @@
 //
 // 앱은 loadtest 프로파일로 띄울 것.
 //
-//   java -jar waiting-server/build/libs/waiting-0.0.1.jar \
+//   java -jar server/build/libs/waiting-0.0.1.jar \
 //        --spring.profiles.active=loadtest
 //
 // '앞 인원은 단조 감소' 검사는 진입이 함께 일어나야 의미가 있다.

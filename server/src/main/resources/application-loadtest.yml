@@ -1,7 +1,7 @@
 # 부하 테스트 전용 프로파일.
 # 측정을 왜곡하는 것만 끈다. 그 외에는 기본 프로파일과 같다.
 #
-#   java -jar waiting-server/build/libs/waiting-0.0.1.jar \
+#   java -jar server/build/libs/waiting-0.0.1.jar \
 #        --spring.profiles.active=loadtest
 
 logging:

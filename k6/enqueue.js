@@ -8,7 +8,7 @@
 // 앱은 loadtest 프로파일로 띄울 것.
 // 요청마다 log.debug가 찍히면 큐가 아니라 로거를 측정하게 된다.
 //
-//   java -jar waiting-server/build/libs/waiting-0.0.1.jar \
+//   java -jar server/build/libs/waiting-0.0.1.jar \
 //        --spring.profiles.active=loadtest
 //
 // 실행 후 큐에 실제로 쌓였는지 확인:
