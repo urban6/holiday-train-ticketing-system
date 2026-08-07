@@ -1,5 +1,5 @@
 // 이미 줄 서 있는 사람들이 순번을 조회하는 **동안** 개시 스파이크가 들어온다.
-// queue.enqueue-via-kafka가 막으려는 것이 정확히 이 상황이고, 이 스크립트가 그걸 잰다.
+// 이 스크립트는 그 스파이크가 조회 지연으로 얼마나 번지는지 잰다.
 //
 //   k6 run -e WAITERS=5000 -e RATE=100000 -e SPIKE_AT=20 -e DURATION=15s k6/mixed.js
 //
@@ -12,13 +12,12 @@
 //
 // ── 왜 enqueue.js·status.js로는 안 되는가 ────────────────────────────────
 //
-// Kafka는 처리량 장치가 아니다. enqueue.lua와 status.lua가 Redis 단일 스레드를
-// 공유하기 때문에, 진입 스파이크가 이미 줄 서 있는 사람의 조회 지연으로 번지는 것을
-// 막는 것이 목적이다(application.yml의 queue.enqueue-via-kafka 주석).
+// enqueue.lua와 status.lua가 Redis 단일 스레드를 공유하기 때문에, 진입 스파이크는
+// 이미 줄 서 있는 사람의 조회 지연으로 번진다.
 //
 // 그런데 기존 스크립트는 둘 중 하나만 건다. enqueue.js는 조회가 없어 경합이 없고,
-// status.js는 VU마다 1회 진입이라 스파이크가 아니다. 즉 **켜기 전과 켠 뒤에 무엇이
-// 달라지는지 잴 수 있는 시나리오가 없었다.** 여기가 그 자리다.
+// status.js는 VU마다 1회 진입이라 스파이크가 아니다. 즉 **번짐이 실제로 얼마나
+// 되는지 잴 수 있는 시나리오가 없었다.** 여기가 그 자리다.
 //
 // 두 시나리오를 한 런에 두는 이유는 프로세스를 나눠 돌리면(status.js 헤더의 병행 실행)
 // 임계값과 요약이 갈려 "조회 p95"를 한 숫자로 비교할 수 없기 때문이다.
@@ -31,8 +30,7 @@
 //   http_req_duration{phase:status,window:spike}   스파이크 중 — 번짐의 크기
 //
 // 기준선을 같은 런에서 뽑는 것이 핵심이다. 다른 런의 수치와 비교하면 JIT·페이지 캐시가
-// 섞인다(README「측정」의 경고). 보는 값은 두 절대치가 아니라 **둘의 비**이고,
-// Kafka를 켜서 그 비가 1에 가까워지면 성공이다.
+// 섞인다(README「측정」의 경고). 보는 값은 두 절대치가 아니라 **둘의 비**다.
 //
 // 진입 쪽 처리량은 여기서 보지 않는다. 스파이크는 open model이라 서버가 느려져도 도착이
 // 줄지 않아서, 여기 나오는 진입 지연은 포화 처리량이 아니라 대기 시간이다.
@@ -42,14 +40,14 @@
 //
 // 빈 큐에서 시작하면 폴링 VU 전원이 큐 앞머리에 서서 조회 주기가 하한(5초)에 붙고,
 // 그중 queue.capacity만큼은 곧바로 입장해 버려 조회 대상이 아니게 된다.
-// measure.sh mixed가 PREFILL로 그 깊이를 먼저 만든다(그 뒤에 초기화하지 않는다 —
-// WARMUP과 다른 점이 이것이다).
+// PREFILL로 그 깊이를 먼저 만들고, 만든 뒤에는 초기화하지 않는다 — WARMUP과 다른 점이
+// 이것이다.
 //
 // ── 검증 등식 ────────────────────────────────────────────────────────────
 //
-// burst.js와 같다. Kafka를 켜면 접수(202)와 등록 사이에 컨슈머가 있어 한 항이 붙는다.
+// burst.js와 같다.
 //
-//   seq == 접수 응답 수 - queue.enqueue.dropped        (accepted 카운터가 앞 항이다)
+//   seq == 접수 응답 수(accepted 카운터)
 //   ZCARD waiting + ZCARD active == seq
 //   ZCARD active <= queue.capacity
 //
@@ -130,14 +128,12 @@ export function poll() {
     const res = http.post(`${BASE_URL}/api/v1/waiting-queue`, null, {
       tags: { phase: 'enqueue', window: 'prefill' },
     });
-    // 202는 Kafka를 거치는 경우다. 접수만 된 상태라 아직 순번이 없고,
-    // 아래 조회가 한동안 PENDING을 받는다 — 그 구간은 각 check가 state로 걸러 낸다.
-    if (res.status !== 201 && res.status !== 202) {
+    if (res.status !== 201) {
       fail(`진입 실패: ${res.status}`);
     }
     accepted.add(1);
     const body = res.json();
-    ticket = { token: body.token, windowId: body.windowId };
+    ticket = { token: body.token, date: body.date };
     pollInterval = toSeconds(body.pollAfterMillis);
 
     // constant-vus는 모든 VU를 거의 같은 순간 시작시킨다. 진입 직후 곧바로 첫 조회를
@@ -145,7 +141,7 @@ export function poll() {
     sleep(Math.random() * pollInterval);
   }
 
-  const url = `${BASE_URL}/api/v1/waiting-queue/${ticket.token}?windowId=${ticket.windowId}`;
+  const url = `${BASE_URL}/api/v1/waiting-queue/${ticket.token}?date=${ticket.date}`;
   const res = http.get(url, { tags: { phase: 'status', window: currentWindow() } });
 
   // 검사 셋은 status.js와 같다. 근거도 그쪽 주석에 있다 —
@@ -186,11 +182,11 @@ export function spike() {
     tags: { phase: 'enqueue', window: 'spike' },
   });
 
-  const ok = res.status === 201 || res.status === 202;
+  const ok = res.status === 201;
   if (ok) {
     accepted.add(1);
   }
-  check(res, { '접수 (201 또는 202)': () => ok });
+  check(res, { '201 CREATED': () => ok });
 }
 
 // 조회 지연을 스파이크 전후로 가르는 태그. 요청을 보내는 시점으로 판정하므로,

@@ -35,12 +35,6 @@
 //   ZCARD waiting + ZCARD active == seq
 //   ZCARD active <= queue.capacity
 //
-// queue.enqueue-via-kafka를 켜면 첫 줄이 달라진다. 접수(202)와 등록 사이에 컨슈머가 있고,
-// 접수된 지 stale-after를 넘긴 메시지는 등록하지 않고 버리기 때문이다. 버린 수는
-// actuator의 queue.enqueue.dropped에서 읽는다.
-//
-//   seq == 202 응답 수 - queue.enqueue.dropped
-//
 // 요청이 거부되는 것 자체는 정원 통제 시스템에서 설계된 동작이지 버그가 아니다.
 
 import http from 'k6/http';
@@ -71,5 +65,5 @@ export default function () {
   const res = http.post(`${BASE_URL}/api/v1/waiting-queue`, null, {
     headers: { 'Content-Type': 'application/json' },
   });
-  check(res, { '201 CREATED 또는 202 ACCEPTED': (r) => r.status === 201 || r.status === 202 });
+  check(res, { '201 CREATED': (r) => r.status === 201 });
 }

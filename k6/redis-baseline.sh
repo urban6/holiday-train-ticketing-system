@@ -12,9 +12,9 @@
 # CLIENTS     동시 연결 수 목록 (기본 "10 50 100 500")
 #
 # enqueue.js가 "앱을 거쳤을 때"를 잰다면 이 스크립트는 "Redis가 낼 수 있는 최대치"를 잰다.
-# infra/aws/measure.sh는 앞의 것만 잰다 — WAS가 먼저 포화돼 Redis가 끝까지 밀리지 않기
-# 때문이다. 둘을 나눠야 "앱이 Redis의 몇 %를 쓰고 있는가"가 나오고, 그게 없으면 앱 수치가
-# 좋은 값인지 나쁜 값인지 말할 수 없다.
+# 앱을 거치는 쪽만 재면 WAS가 먼저 포화돼 Redis가 끝까지 밀리지 않는다. 둘을 나눠야
+# "앱이 Redis의 몇 %를 쓰고 있는가"가 나오고, 그게 없으면 앱 수치가 좋은 값인지 나쁜 값인지
+# 말할 수 없다.
 #
 # **비교 단위는 EVALSHA 호출/초다.** 앱은 요청 1건이 EVALSHA 1회라(enqueue.lua를 한 번 부른다)
 # k6의 req/s와 여기 rps가 그대로 나란히 놓인다. 내부 명령까지 센 ops/sec과 섞지 말 것 —
@@ -110,8 +110,9 @@ echo "대상: $REDIS_HOST:$REDIS_PORT · 스크립트 SHA: $SHA"
 # 절대 시각이라 아무 미래값이면 된다. PEXPIREAT 인자로만 쓰인다.
 DEADLINE=$(( ($(date +%s) + 86400) * 1000 ))
 
-# 실제 대기열(*:holiday:*)을 건드리지 않도록 별도 네임스페이스를 쓴다.
-# measure.sh의 초기화가 '*:holiday:*'만 훑으므로 서로 지우지 않는다.
+# 실제 대기열(waiting:*·active:*·poll:*)을 건드리지 않도록 bench: 네임스페이스를 쓴다.
+# 대기열 초기화가 그 세 접두사만 훑으므로 서로 지우지 않는다 — bench:poll은
+# 'poll:*'에 걸리지 않는다.
 BENCH_Z="bench:z"
 BENCH_SEQ="bench:seq"
 BENCH_POLL="bench:poll"

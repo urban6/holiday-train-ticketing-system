@@ -41,9 +41,12 @@
 //   k6 run -e USERS=200000 k6/enqueue.js
 //
 // 다시 돌리기 전 초기화 (TTL이 내일 자정까지라 그냥 두면 계속 누적된다):
-//   (active 키까지 지워야 하므로 패턴이 'waiting:'이 아니다)
-//   docker exec redis redis-cli --scan --pattern '*:holiday:*' \
-//     | xargs -n1 docker exec redis redis-cli UNLINK
+//   (active·poll 키까지 지워야 하므로 접두사를 셋 다 훑는다 — k6/enqueue.js 머리말 참고)
+//   for p in 6380 6381 6382; do
+//     for k in 'waiting:*' 'active:*' 'poll:*'; do
+//       redis-cli -p $p --scan --pattern "$k" | xargs -r redis-cli -p $p UNLINK
+//     done
+//   done
 
 import http from 'k6/http';
 import { check, sleep, fail } from 'k6';
@@ -85,13 +88,11 @@ export default function () {
     const res = http.post(`${BASE_URL}/api/v1/waiting-queue`, null, {
       tags: { phase: 'enqueue' },
     });
-    // 202는 Kafka를 거치는 경우다(queue.enqueue-via-kafka). 접수만 된 상태라 아직 순번이 없고,
-    // 아래 조회가 한동안 PENDING을 받는다 — 그 구간은 각 check가 state로 걸러 낸다.
-    if (res.status !== 201 && res.status !== 202) {
+    if (res.status !== 201) {
       fail(`진입 실패: ${res.status}`);
     }
     const body = res.json();
-    ticket = { token: body.token, windowId: body.windowId };
+    ticket = { token: body.token, date: body.date };
 
     // 첫 주기도 진입 응답이 알려 준다. waiting.js와 같다.
     pollInterval = toSeconds(body.pollAfterMillis);
@@ -102,7 +103,7 @@ export default function () {
     sleep(Math.random() * pollInterval);
   }
 
-  const url = `${BASE_URL}/api/v1/waiting-queue/${ticket.token}?windowId=${ticket.windowId}`;
+  const url = `${BASE_URL}/api/v1/waiting-queue/${ticket.token}?date=${ticket.date}`;
   const res = http.get(url, { tags: { phase: 'status' } });
 
   // 아래 두 검사는 상태 코드를 보지 않는다. 200이 아니면 '200 OK'가 이미 실패로 잡으므로
@@ -133,7 +134,7 @@ export default function () {
 
     // 순번은 줄기만 해야 한다. 승격은 큐 앞에서만 빠지고(ZPOPMIN) 신규 진입은 뒤에 붙으므로
     // (seq가 INCR로 단조 증가) 내 앞 인원이 늘어날 경로가 없다.
-    // 늘어난다면 seq 되감기, 같은 토큰의 재삽입(ZADD가 score를 갱신), windowId 혼동 중 하나다.
+    // 늘어난다면 seq 되감기, 같은 토큰의 재삽입(ZADD가 score를 갱신), date 혼동 중 하나다.
     //
     // 이 검사는 원자성과 무관하다 — rank는 원자적이든 아니든 시간이 지나면 줄어든다.
     // 진입 부하를 같이 걸어야 의미가 있다(위 실행 방법 참고).

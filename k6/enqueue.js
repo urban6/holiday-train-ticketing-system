@@ -11,13 +11,19 @@
 //   java -jar server/build/libs/waiting-0.0.1.jar \
 //        --spring.profiles.active=loadtest
 //
-// 실행 후 큐에 실제로 쌓였는지 확인:
-//   docker exec redis redis-cli ZCARD waiting:holiday:$(TZ=Asia/Seoul date +%Y%m%d)
+// 실행 후 큐에 실제로 쌓였는지 확인 (샤드마다 따로 세야 한다 — 태그는 QueueKeys.SHARD_TAGS):
+//   D=$(TZ=Asia/Seoul date +%Y%m%d)
+//   for p in 6380 6381 6382; do
+//     for t in a b c; do redis-cli -p $p ZCARD "waiting:$D:{$t}" 2>/dev/null; done
+//   done
 //
 // 다시 돌리기 전 초기화 (TTL이 내일 자정까지라 그냥 두면 계속 누적된다):
-//   (active 키까지 지워야 하므로 패턴이 'waiting:'이 아니다)
-//   docker exec redis redis-cli --scan --pattern '*:holiday:*' \
-//     | xargs -n1 docker exec redis redis-cli UNLINK
+//   (active·poll 키까지 지워야 하므로 접두사를 셋 다 훑는다)
+//   for p in 6380 6381 6382; do
+//     for k in 'waiting:*' 'active:*' 'poll:*'; do
+//       redis-cli -p $p --scan --pattern "$k" | xargs -r redis-cli -p $p UNLINK
+//     done
+//   done
 
 import http from 'k6/http';
 import { check } from 'k6';
@@ -49,8 +55,5 @@ export default function () {
   const res = http.post(`${BASE_URL}/api/v1/waiting-queue`, null, {
     headers: { 'Content-Type': 'application/json' },
   });
-  // 201과 202를 함께 받는다. 진입이 Redis로 바로 가면 201이고, Kafka를 거치면 접수만 된 것이라
-  // 202다(queue.enqueue-via-kafka). 같은 스크립트로 플래그 전후를 재는 것이 목적이라
-  // 한쪽만 통과시키면 그 순간 스크립트를 고쳐야 하고, 그러면 두 런이 같은 축에서 벗어난다.
-  check(res, { '201 CREATED 또는 202 ACCEPTED': (r) => r.status === 201 || r.status === 202 });
+  check(res, { '201 CREATED': (r) => r.status === 201 });
 }
