@@ -12,3 +12,9 @@
 # redis-server가 클러스터 상태를 스스로 기록하는 런타임 파일. 노드마다 다르고 매번 새로
 # 만들어지므로 커밋 대상이 아니다.
 infra/redis/nodes-*.conf
+
+### AWS 측정 환경 ###
+# 채운 값에는 DB 비밀번호가 들어간다. 커밋하는 것은 .example 두 개뿐이다.
+infra/aws/env
+# AMI·서브넷·보안 그룹 ID. 시크릿은 아니지만 계정마다 달라 커밋할 값이 아니다.
+infra/aws/provision.env
