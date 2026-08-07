@@ -8,7 +8,7 @@
 .vscode/
 *.iml
 
-### 시크릿 ###
-# 채운 환경 변수 파일. 템플릿(env.example)만 커밋한다.
-infra/aws/env
-infra/aws/provision.env
+### Redis Cluster ###
+# redis-server가 클러스터 상태를 스스로 기록하는 런타임 파일. 노드마다 다르고 매번 새로
+# 만들어지므로 커밋 대상이 아니다.
+infra/redis/nodes-*.conf

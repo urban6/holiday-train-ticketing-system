@@ -56,60 +56,6 @@ services:
       timeout: 3s
       retries: 5
 
-  kafka:
-    # 대기열 진입을 여기로 흘려 Redis 유입률에 상한을 건다(queue.enqueue-via-kafka).
-    # 처리량을 올리려고 넣은 것이 아니다 — enqueue와 status가 Redis 단일 스레드를 공유해서,
-    # 개시 순간의 진입 스파이크가 이미 줄 서 있는 사람들의 순번 조회 지연으로 번지는 것을 막는다.
-    #
-    # 태그는 redis·postgres와 같은 이유로 고정한다. 값은 spring-boot-kafka가 끌어오는
-    # kafka-clients(4.2.1)에 맞췄다 — 브로커와 클라이언트 major가 갈리면 재현이 깨진다.
-    image: apache/kafka:4.2.1
-    container_name: kafka
-    ports:
-      - "9092:9092"
-    environment:
-      # KRaft 단일 브로커. ZooKeeper를 두지 않는다 — 측정에 얹는 변수를 하나 더 만들 이유가 없다.
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-      # 앱은 컨테이너가 아니라 호스트에서 jar로 뜬다(README의 측정용 실행 방법).
-      # 여기를 kafka:9092로 두면 호스트의 프로듀서가 부트스트랩 응답을 받고 나서
-      # 그 이름으로 다시 붙으려다 실패한다 — 기동은 멀쩡하고 produce만 조용히 타임아웃된다.
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      # 단일 브로커라 복제할 상대가 없다. 기본값(3)으로 두면 내부 토픽 생성부터 실패한다.
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      # 컨슈머가 붙을 때마다 기본 3초를 기다리면 기동 직후 측정이 그만큼 밀린다.
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      # 진입 토픽은 KafkaAdmin이 만든다(EnqueueKafkaConfig) — 파티션 수를 application.yml
-      # 한 곳에서 읽게 하려고 자동 생성에 맡기지 않는다. 열어 두면 컨슈머가 먼저 붙는
-      # 순간 브로커 기본값(1 파티션)으로 토픽이 생겨 application.yml의 partitions가
-      # 조용히 무시된다 — 남는 컨슈머가 노는데 어디에도 안 나오는 상태가 된다.
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
-      KAFKA_LOG_DIRS: /var/lib/kafka/data
-      CLUSTER_ID: holiday-ticketing-kafka
-    volumes:
-      - kafka-data:/var/lib/kafka/data
-    # redis·postgres와 같은 상한이다. 더 주고 싶어도 못 준다 — Docker Desktop VM에 CPU가 1개만
-    # 할당돼 있어서 1.00을 넘기면 컨테이너 생성 자체가 거부된다.
-    #
-    # 즉 로컬에서는 브로커·Redis·Postgres가 코어 하나를 나눠 쓴다. 여기서 잰 수치는 유입률 상한이
-    # 아니라 그 경합을 재는 것이므로 의미가 없다 — 로컬은 정합성 확인용이고 절대 수치는 AWS에서 잰다.
-    mem_limit: 2G
-    cpus: "1.0"
-    healthcheck:
-      test: ["CMD", "/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "localhost:9092"]
-      # 브로커 기동이 redis·postgres보다 느려서 간격·재시도를 늘렸다.
-      interval: 10s
-      timeout: 10s
-      retries: 10
-
 volumes:
   redis-data:
   postgres-data:
-  kafka-data:
