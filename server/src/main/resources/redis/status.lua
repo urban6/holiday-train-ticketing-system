@@ -1,7 +1,7 @@
 -- 대기 순번 / 입장 여부 조회
--- KEYS[1] = waiting:holiday:{windowId}   ZSet (member=uuid, score=seq)
--- KEYS[2] = active:holiday:{windowId}    ZSet (member=uuid, score=만료 epoch ms)
--- KEYS[3] = poll:holiday:{windowId}      ZSet (member=uuid, score=다음 폴링 기한 epoch ms)
+-- KEYS[1] = waiting:{date}:{shard}   ZSet (member=uuid, score=seq)
+-- KEYS[2] = active:{date}:{shard}    ZSet (member=uuid, score=만료 epoch ms)
+-- KEYS[3] = poll:{date}:{shard}      ZSet (member=uuid, score=다음 폴링 기한 epoch ms)
 -- ARGV[1] = uuid
 -- ARGV[2] = nowMillis
 -- ARGV[3] = millisPerRank    순번 1당 주기 증가분(소수). QueueProperties가 접어서 넘긴다

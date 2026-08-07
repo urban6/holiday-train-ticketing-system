@@ -14,6 +14,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record QueueProperties(
         LocalTime open,
         LocalTime close,
+        int shardCount,
         int capacity,
         int maxBatch,
         Duration promoteInterval,
@@ -29,7 +30,21 @@ public record QueueProperties(
 ) {
 
     public QueueProperties {
+        require(shardCount > 0, "queue.shard-count는 1 이상이어야 합니다: " + shardCount);
+
+        // 태그가 없는 샤드는 키를 만들 수 없다. 여기서 막지 않으면 기동은 멀쩡히 끝나고
+        // 그 샤드로 배정된 첫 사용자의 요청에서 QueueKeys.tag()가 던진다.
+        require(shardCount <= QueueKeys.maxShardCount(),
+                "queue.shard-count(%d)에 쓸 해시 태그가 %d개뿐입니다. QueueKeys.SHARD_TAGS에 문자를 추가하고 CLUSTER KEYSLOT으로 마스터마다 하나씩 떨어지는지 다시 확인하세요."
+                        .formatted(shardCount, QueueKeys.maxShardCount()));
+
         require(capacity > 0, "queue.capacity는 1 이상이어야 합니다: " + capacity);
+
+        // capacity는 전역 값이고 샤드가 나눠 갖는다. 샤드보다 작으면 몫이 0인 샤드가 생겨
+        // 그 샤드의 대기자는 영영 승격되지 않는다.
+        require(capacity >= shardCount,
+                "queue.capacity(%d)가 queue.shard-count(%d)보다 작습니다. 몫이 0인 샤드가 생깁니다."
+                        .formatted(capacity, shardCount));
         require(maxBatch > 0, "queue.max-batch는 1 이상이어야 합니다: " + maxBatch);
         require(maxSweep > 0, "queue.max-sweep은 1 이상이어야 합니다: " + maxSweep);
         require(pollUpdates > 0, "queue.poll-updates는 1 이상이어야 합니다: " + pollUpdates);
@@ -89,9 +104,25 @@ public record QueueProperties(
      *
      * <p><b>Lua에 나누기를 넘기지 않는 이유는 정수 나눗셈이다.</b> maxBatch가 1000을 넘는 순간
      * 0이 되어 모두가 하한에 붙고 이 기능이 아무 소리 없이 꺼진다.
+     *
+     * <p><b>샤드 수가 여기 들어오지 않는 것이 맞다.</b> status.lua가 주는 순번은 그 사람의 샤드
+     * 안에서의 순번이고, 그 샤드는 maxBatch씩 빠진다 — 둘의 축이 이미 같다. 전역으로 환산하면
+     * 순번도 승격 속도도 나란히 샤드 수만큼 커져 몫이 그대로다. 여기에 샤드 수를 곱하거나 나누면
+     * 그 상쇄를 깨서 주기가 샤드 수만큼 어긋난다.
      */
     public double millisPerRank() {
         return (double) promoteInterval.toMillis() / maxBatch / pollUpdates;
+    }
+
+    /**
+     * 이 샤드가 가진 활성 정원. 전역 capacity를 샤드가 나눠 갖는다.
+     *
+     * <p>나머지를 앞 샤드에 하나씩 얹어 합이 정확히 capacity가 되게 한다. 그냥 정수 나눗셈만
+     * 하면 1000명 정원이 샤드 3개에서 999명이 되는데, 정원은 뒷단이 감당할 수 있는 수라
+     * 조용히 줄어드는 쪽보다 적어 둔 값과 같은 쪽이 낫다.
+     */
+    public int capacityOf(int shard) {
+        return capacity / shardCount + (shard < capacity % shardCount ? 1 : 0);
     }
 
     private static boolean positive(Duration d) {

@@ -1,7 +1,7 @@
 -- 대기열 진입
--- KEYS[1] = waiting:holiday:{windowId}       ZSet   (member=uuid, score=seq)
--- KEYS[2] = waiting:holiday:{windowId}:seq   String (창별 단조 증가 시퀀스)
--- KEYS[3] = poll:holiday:{windowId}          ZSet   (member=uuid, score=다음 폴링 기한 epoch ms)
+-- KEYS[1] = waiting:{date}:{shard}       ZSet   (member=uuid, score=seq)
+-- KEYS[2] = waiting:{date}:{shard}:seq   String (창별 단조 증가 시퀀스)
+-- KEYS[3] = poll:{date}:{shard}          ZSet   (member=uuid, score=다음 폴링 기한 epoch ms)
 -- ARGV[1] = uuid
 -- ARGV[2] = waitingDeadlineMillis  (창 마감 + waitingGrace)
 -- ARGV[3] = seqDeadlineMillis      (창 마감 + seqGrace, waitingDeadline보다 늦을 것)

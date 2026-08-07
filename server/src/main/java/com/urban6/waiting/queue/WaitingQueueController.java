@@ -2,7 +2,6 @@ package com.urban6.waiting.queue;
 
 import com.urban6.waiting.queue.WaitingQueueService.Status;
 import com.urban6.waiting.queue.WaitingQueueService.Ticket;
-import com.urban6.waiting.queue.ingest.EnqueueSink;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -20,30 +19,22 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class WaitingQueueController {
 
-    /** 값은 "{windowId}.{token}"이다. 활성 조회에 둘 다 필요한데 쿠키를 나눌 이유가 없다. */
+    /** 값은 "{date}.{token}"이다. 활성 조회에 둘 다 필요한데 쿠키를 나눌 이유가 없다. */
     public static final String PASS_COOKIE = "pass";
 
     private final WaitingQueueService waitingQueueService;
     private final QueueProperties properties;
 
-    /**
-     * Kafka 경유 진입은 아직 대기열에 등록되지 않았으므로 201이 아니라 202다.
-     * 플래그를 여기까지 끌고 오지 않는다 — {@link EnqueueSink#SEQ_PENDING}만 보면 된다.
-     */
     @PostMapping
     public ResponseEntity<Ticket> enqueue() {
         Ticket ticket = waitingQueueService.enqueue();
 
-        HttpStatus status = ticket.seq() == EnqueueSink.SEQ_PENDING
-                ? HttpStatus.ACCEPTED
-                : HttpStatus.CREATED;
-
-        return ResponseEntity.status(status).body(ticket);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ticket);
     }
 
     @GetMapping("/{token}")
-    public Status status(@PathVariable String token, @RequestParam String windowId) {
-        return waitingQueueService.status(windowId, token);
+    public Status status(@PathVariable String token, @RequestParam String date) {
+        return waitingQueueService.status(date, token);
     }
 
     /**
@@ -56,8 +47,8 @@ public class WaitingQueueController {
      * 화면은 이미 사라진 뒤다. 아직 입장권이 없는 대기자가 부르는 API라 게이트도 타지 않는다.
      */
     @PostMapping("/{token}/leave")
-    public ResponseEntity<Void> leave(@PathVariable String token, @RequestParam String windowId) {
-        waitingQueueService.leave(windowId, token);
+    public ResponseEntity<Void> leave(@PathVariable String token, @RequestParam String date) {
+        waitingQueueService.leave(date, token);
 
         return ResponseEntity.noContent().build();
     }
@@ -67,16 +58,16 @@ public class WaitingQueueController {
      * 여기서 쿠키로 바꿔 심어야 로그인·예약 화면까지 활성 상태가 따라간다.
      */
     @PostMapping("/{token}/admission")
-    public ResponseEntity<Void> claim(@PathVariable String token, @RequestParam String windowId) {
-        waitingQueueService.claim(windowId, token);   // 실패하면 Expired → 404
+    public ResponseEntity<Void> claim(@PathVariable String token, @RequestParam String date) {
+        waitingQueueService.claim(date, token);   // 실패하면 Expired → 404
 
         return ResponseEntity.noContent()
-                .header(HttpHeaders.SET_COOKIE, passCookie(windowId, token).toString())
+                .header(HttpHeaders.SET_COOKIE, passCookie(date, token).toString())
                 .build();
     }
 
-    private ResponseCookie passCookie(String windowId, String token) {
-        return ResponseCookie.from(PASS_COOKIE, windowId + "." + token)
+    private ResponseCookie passCookie(String date, String token) {
+        return ResponseCookie.from(PASS_COOKIE, date + "." + token)
                 // 입장 자격이라 XSS로 새면 그대로 자리를 빼앗긴다.
                 .httpOnly(true)
                 .sameSite("Lax")

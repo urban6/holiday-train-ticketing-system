@@ -20,7 +20,6 @@
 
     const timer = document.getElementById('reservation-timer');
     const clock = document.getElementById('reservation-clock');
-    const expiredNotice = document.getElementById('reservation-expired');
 
     const remaining = Number(timer?.dataset.remaining);
     if (!timer || !clock || !Number.isFinite(remaining)) {
@@ -77,10 +76,6 @@
         // 이동하기까지의 짧은 사이에 마지막 클릭이 들어가는 걸 막는다.
         document.querySelectorAll('main button, main input, main select, main textarea')
             .forEach((el) => { el.disabled = true; });
-
-        if (expiredNotice) {
-            expiredNotice.hidden = false;
-        }
 
         // assign이 아니라 replace다. 뒤로가기로 이미 만료된 이 화면에 돌아오면
         // 서버가 다시 튕겨 낼 뿐이라 사용자에게는 화면이 깜빡이는 것으로만 보인다.

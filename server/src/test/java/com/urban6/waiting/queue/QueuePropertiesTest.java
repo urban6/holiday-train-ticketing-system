@@ -87,6 +87,43 @@ class QueuePropertiesTest {
                 .withMessageContaining("만료 체인");
     }
 
+    @Test
+    @DisplayName("샤드 수가 0 이하면 기동에 실패한다")
+    void shardCountMustBePositive() {
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> builder().shardCount(0).build())
+                .withMessageContaining("shard-count");
+    }
+
+    @Test
+    @DisplayName("샤드 수가 마련된 해시 태그보다 많으면 기동에 실패한다")
+    void shardCountMustNotExceedAvailableTags() {
+        // 여기서 막지 않으면 기동은 통과하고, 태그가 없는 샤드로 배정된 첫 사용자의 요청에서야
+        // QueueKeys.tag()가 던진다. 설정 실수가 런타임까지 미뤄지는 자리다.
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> builder().shardCount(QueueKeys.maxShardCount() + 1).build())
+                .withMessageContaining("해시 태그");
+    }
+
+    @Test
+    @DisplayName("정원이 샤드 수보다 작으면 기동에 실패한다")
+    void capacityMustBeAtLeastShardCount() {
+        // 샤드 수는 태그 상한 안에 두고 정원만 낮춘다. 예전처럼 샤드 수를 크게 잡으면
+        // 위의 태그 검증에 먼저 걸려 이 테스트가 정원을 보지 않게 된다.
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> builder().shardCount(3).capacity(2).build())
+                .withMessageContaining("shard-count");
+    }
+
+    @Test
+    @DisplayName("전역 정원을 샤드 수만큼 나머지 없이 나눠 배분한다")
+    void capacityOfSplitsAcrossShardsWithoutLoss() {
+        QueueProperties properties = builder().shardCount(3).build();
+
+        assertThat(properties.capacityOf(0) + properties.capacityOf(1) + properties.capacityOf(2))
+                .isEqualTo(properties.capacity());
+    }
+
     private static QueueProperties valid() {
         return builder().build();
     }
@@ -98,12 +135,24 @@ class QueuePropertiesTest {
     /** application.yml의 현재 값에서 한 항목만 바꿔 가며 검증을 하나씩 건드리기 위한 것. */
     private static final class Builder {
 
+        private int shardCount = 3;
+        private int capacity = 1000;
         private int maxBatch = 500;
         private Duration minPollInterval = Duration.ofSeconds(5);
         private Duration maxPollInterval = Duration.ofSeconds(30);
         private Duration pollGrace = Duration.ofSeconds(60);
         private Duration sweepInterval = Duration.ofSeconds(5);
         private Duration reservationTtl = Duration.ofMinutes(3);
+
+        Builder shardCount(int value) {
+            this.shardCount = value;
+            return this;
+        }
+
+        Builder capacity(int value) {
+            this.capacity = value;
+            return this;
+        }
 
         Builder maxBatch(int value) {
             this.maxBatch = value;
@@ -138,7 +187,8 @@ class QueuePropertiesTest {
         QueueProperties build() {
             return new QueueProperties(
                     LocalTime.parse("00:00"), LocalTime.parse("23:59:59"),
-                    1000, maxBatch,
+                    shardCount,
+                    capacity, maxBatch,
                     Duration.ofSeconds(1), Duration.ofSeconds(150),
                     Duration.ofMinutes(10), reservationTtl,
                     minPollInterval, maxPollInterval, 4, pollGrace,

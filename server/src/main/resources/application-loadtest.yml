@@ -19,18 +19,35 @@ logging:
 spring:
   data:
     redis:
-      # 기본값 60초. 포화 시 에러가 나는 게 아니라 그냥 매달린다.
-      timeout: 1s
+      # timeout·connect-timeout은 운영에도 필요한 값이라 기본 프로파일에 있다.
+      cluster:
+        # Homebrew 네이티브 redis-server로 실제 클러스터 이득과 자동 failover를 잰다
+        # (Docker는 포트 포워딩이 처리량의 상당 부분을 먹어 측정에 부적합 — redis-benchmark
+        # 실측 기록 참고). 부트스트랩 절차는 docs/redis-cluster-bootstrap.md 참고.
+        #
+        # 6380~6382만 적는다. 이 셋은 레플리카를 붙이든(마스터 3 + 레플리카 3) 안 붙이든
+        # (분배 확인용 마스터 3대) 항상 마스터라, 두 구성 어느 쪽에서도 그대로 맞는 시드다.
+        # 하나로 줄이지는 않는다 — 기동 순간 그 하나가 아직 안 떠 있으면 초기 토폴로지 탐색이
+        # 실패하는데, 셋이면 나머지 둘이 받아 준다. 레플리카는 여기 적지 않아도 클러스터가
+        # 토폴로지로 알려 주므로 failover를 따라가는 데 지장이 없다.
+        nodes:
+          - 127.0.0.1:6380
+          - 127.0.0.1:6381
+          - 127.0.0.1:6382
+      lettuce:
+        cluster:
+          refresh:
+            # 장애 조치 뒤 클라이언트가 새 마스터를 알아채는 주기. 개별 명령의 MOVED 재시도는
+            # 이 값과 무관하게 항상 따라가므로, 이 값은 "전체 토폴로지 지도가 얼마나 빨리
+            # 새로 고쳐지는가"만 정한다 — 최악의 경우 failover 뒤 이 시간만큼은 지도가 낡은
+            # 채로 매 명령이 한 번 튕겼다가 재시도로 성공한다.
+            period: 5s
 
-  # 위 redis.timeout과 같은 축이다. queue.kafka.ack-timeout(3초)은 send()가 돌려준 뒤의
-  # 대기만 덮는데, 프로듀서 버퍼(buffer.memory 기본 32MB)가 차면 send() 자체가
-  # max.block.ms만큼 막히고 그 구간은 3초 밖이다. 기본값 60초를 그대로 두면 포화에서
-  # 요청이 실패하는 대신 1분씩 매달려, 재려던 p99가 그 대기 시간이 되어 버린다.
-  # enqueue-via-kafka가 false면 프로듀서가 아예 뜨지 않아 이 값은 읽히지 않는다.
-  kafka:
-    producer:
-      properties:
-        max.block.ms: 3000
+queue:
+  # 마스터 3개에 맞춘 샤드 수. 위 cluster.nodes와 이 값이 어긋나면(예: 샤드 5인데 마스터가
+  # 3개) 일부 샤드의 해시 태그가 몰려 균등 분배가 깨진다 — docs/redis-cluster-bootstrap.md의
+  # keyslot 정렬 절차가 정확히 이 개수(3)를 전제로 한다.
+  shard-count: 3
 
 server:
   tomcat:

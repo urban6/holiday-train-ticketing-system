@@ -39,6 +39,10 @@ import org.springframework.data.redis.core.ZSetOperations.TypedTuple;
  */
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest(properties = {
+        // 샤드 하나로 고정한다. 주기 계산의 축인 순번이 샤드 안 값이라 샤딩과 무관하게 같은
+        // 식이 성립하지만(QueueProperties.millisPerRank 참고), 여기서는 "이 순번에 이 주기"를
+        // 정확히 단언하므로 시드한 순번이 그대로 ZRANK로 나와야 한다.
+        "queue.shard-count=1",
         "queue.promote-interval=1h",
         "queue.sweep-interval=59s"
 })
@@ -77,15 +81,15 @@ class PollIntervalTest {
         for (int i = 0; i < properties.capacity(); i++) {
             holders.add(TypedTuple.of("holder:" + i, (double) farFuture));
         }
-        redis.opsForZSet().add(QueueKeys.active(windowId()), holders);
+        redis.opsForZSet().add(QueueKeys.active(date(), 0), holders);
     }
 
     /** 창 키는 하루 단위라 테스트끼리 공유된다. 남은 항목이 다음 테스트의 순번에 섞이므로 매번 비운다. */
     @AfterEach
     void clearWindow() {
         redis.delete(List.of(
-                QueueKeys.waiting(windowId()), QueueKeys.seq(windowId()),
-                QueueKeys.active(windowId()), QueueKeys.pollDeadline(windowId())));
+                QueueKeys.waiting(date(), 0), QueueKeys.seq(date(), 0),
+                QueueKeys.active(date(), 0), QueueKeys.pollDeadline(date(), 0)));
     }
 
     @Test
@@ -139,8 +143,8 @@ class PollIntervalTest {
         Ticket ticket = waitingQueueService.enqueue();
 
         // 이 테스트만 승격이 실제로 일어나야 하므로 막아 둔 자리를 먼저 비운다.
-        redis.delete(QueueKeys.active(windowId()));
-        waitingQueueService.promote();
+        redis.delete(QueueKeys.active(date(), 0));
+        waitingQueueService.promote(0);
 
         Status status = status(ticket);
         assertThat(status.state()).isEqualTo(State.ADMITTED);
@@ -157,7 +161,7 @@ class PollIntervalTest {
 
         long pollAfter = status(ticket).pollAfterMillis();
 
-        Double deadline = redis.opsForZSet().score(QueueKeys.pollDeadline(windowId()), ticket.token());
+        Double deadline = redis.opsForZSet().score(QueueKeys.pollDeadline(date(), 0), ticket.token());
         assertThat(requireNonNull(deadline).longValue())
                 .isEqualTo(clock.millis() + pollAfter + properties.pollGrace().toMillis());
     }
@@ -174,10 +178,10 @@ class PollIntervalTest {
         assertThat(status(deep).pollAfterMillis()).isEqualTo(properties.maxPollInterval().toMillis());
 
         clock.advance(properties.minPollInterval().plus(properties.pollGrace()).plusSeconds(1));
-        assertThat(waitingQueueService.sweepStale()).isZero();
+        assertThat(waitingQueueService.sweepStale(0)).isZero();
 
         clock.advance(properties.maxPollInterval().minus(properties.minPollInterval()));
-        assertThat(waitingQueueService.sweepStale()).isEqualTo(1);
+        assertThat(waitingQueueService.sweepStale(0)).isEqualTo(1);
     }
 
     @Test
@@ -193,7 +197,7 @@ class PollIntervalTest {
 
         clock.advance(properties.minPollInterval().plus(properties.pollGrace()).plusSeconds(1));
 
-        assertThat(waitingQueueService.sweepStale()).isEqualTo(1);
+        assertThat(waitingQueueService.sweepStale(0)).isEqualTo(1);
         assertThat(status(deep).state()).isEqualTo(State.WAITING);
     }
 
@@ -227,20 +231,20 @@ class PollIntervalTest {
         if (count == 0) {
             return;
         }
-        long last = requireNonNull(redis.opsForValue().increment(QueueKeys.seq(windowId()), count));
+        long last = requireNonNull(redis.opsForValue().increment(QueueKeys.seq(date(), 0), count));
 
         Set<TypedTuple<String>> bots = new HashSet<>();
         for (long seq = last - count + 1; seq <= last; seq++) {
             bots.add(TypedTuple.of("bot:" + seq, (double) seq));
         }
-        redis.opsForZSet().add(QueueKeys.waiting(windowId()), bots);
+        redis.opsForZSet().add(QueueKeys.waiting(date(), 0), bots);
     }
 
     private Status status(Ticket ticket) {
-        return waitingQueueService.status(ticket.windowId(), ticket.token());
+        return waitingQueueService.status(ticket.date(), ticket.token());
     }
 
-    private String windowId() {
-        return dailyWindow.at(clock.instant()).windowId();
+    private String date() {
+        return dailyWindow.at(clock.instant()).date();
     }
 }

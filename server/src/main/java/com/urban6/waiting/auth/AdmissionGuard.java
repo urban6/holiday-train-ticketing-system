@@ -42,7 +42,7 @@ public class AdmissionGuard implements HandlerInterceptor {
         Optional<Pass> pass = PassCookie.read(request);
 
         if (pass.isPresent()) {
-            OptionalLong expiresAt = waitingQueueService.activeUntil(pass.get().windowId(), pass.get().token());
+            OptionalLong expiresAt = waitingQueueService.activeUntil(pass.get().date(), pass.get().token());
             if (expiresAt.isPresent()) {
                 request.setAttribute(EXPIRES_AT, expiresAt.getAsLong());
                 return true;

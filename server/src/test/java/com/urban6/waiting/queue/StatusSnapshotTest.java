@@ -29,7 +29,13 @@ import org.springframework.data.redis.core.StringRedisTemplate;
  * 손으로 재현하는 셈이다.
  */
 @Import(TestcontainersConfiguration.class)
-@SpringBootTest
+@SpringBootTest(properties = {
+        // 샤드 하나로 고정한다. 여기서 보는 것은 "ZRANK와 ZCARD가 같은 스냅샷에서 나오는가"라
+        // 두 값의 관계를 그대로 봐야 하는데, 샤드가 여럿이면 서비스가 둘 다 샤드 수로 곱해
+        // 근사한 값을 준다. 곱셈은 관계를 보존하므로 불변식은 그대로지만, 깨졌을 때
+        // 원인이 스냅샷인지 근사인지 구분되지 않는다.
+        "queue.shard-count=1"
+})
 class StatusSnapshotTest {
 
     @Autowired WaitingQueueService waitingQueueService;
@@ -42,19 +48,19 @@ class StatusSnapshotTest {
     @AfterEach
     void clearWindow() {
         redis.delete(List.of(
-                QueueKeys.waiting(windowId()), QueueKeys.seq(windowId()),
-                QueueKeys.active(windowId()), QueueKeys.pollDeadline(windowId())));
+                QueueKeys.waiting(date(), 0), QueueKeys.seq(date(), 0),
+                QueueKeys.active(date(), 0), QueueKeys.pollDeadline(date(), 0)));
     }
 
     @Test
     @DisplayName("따로 읽으면 순번이 전체 인원을 넘어선다 — Lua로 묶은 이유")
     void splitReadTearsTheSnapshot() {
         Ticket last = fillQueue();
-        String waiting = QueueKeys.waiting(windowId());
+        String waiting = QueueKeys.waiting(date(), 0);
 
         // 비원자 버전: ZRANK를 먼저 읽고 ZCARD를 나중에 읽는다.
         Long rank = redis.opsForZSet().rank(waiting, last.token());
-        waitingQueueService.promote();                       // 그 사이에 앞에서 max-batch만큼 빠진다
+        waitingQueueService.promote(0);                      // 그 사이에 앞에서 max-batch만큼 빠진다
         Long total = redis.opsForZSet().zCard(waiting);
 
         assertThat(rank).isNotNull();
@@ -79,7 +85,7 @@ class StatusSnapshotTest {
 
         // 승격을 사이사이 끼워 넣어도 한 번의 스크립트 호출 안으로는 끼어들 수 없다.
         for (int i = 0; i < 10; i++) {
-            Status status = waitingQueueService.status(last.windowId(), last.token());
+            Status status = waitingQueueService.status(last.date(), last.token());
             if (status.state() != State.WAITING) {
                 break;                                       // 내 차례가 와서 입장했다
             }
@@ -88,7 +94,7 @@ class StatusSnapshotTest {
             assertThat(status.behind()).isNotNegative();
             assertThat(status.position()).isEqualTo(status.ahead() + 1);
 
-            waitingQueueService.promote();
+            waitingQueueService.promote(0);
         }
     }
 
@@ -106,7 +112,7 @@ class StatusSnapshotTest {
         return last;
     }
 
-    private String windowId() {
-        return dailyWindow.at(clock.instant()).windowId();
+    private String date() {
+        return dailyWindow.at(clock.instant()).date();
     }
 }

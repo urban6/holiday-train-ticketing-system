@@ -44,10 +44,6 @@ public class ReservationService {
         return reservationRepository.findByMember(memberId);
     }
 
-    public int maxPerMember() {
-        return properties.maxPerMember();
-    }
-
     /**
      * 예약을 확정한다. 하나의 트랜잭션 안에서 아래 순서로 진행하며, 어느 단계가 실패하면 전체가
      * 롤백되어 재고도 예약도 남지 않는다.

@@ -1,6 +1,6 @@
 -- 대기열 이탈
--- KEYS[1] = waiting:holiday:{windowId}   ZSet (member=uuid, score=seq)
--- KEYS[2] = poll:holiday:{windowId}      ZSet (member=uuid, score=다음 폴링 기한 epoch ms)
+-- KEYS[1] = waiting:{date}:{shard}   ZSet (member=uuid, score=seq)
+-- KEYS[2] = poll:{date}:{shard}      ZSet (member=uuid, score=다음 폴링 기한 epoch ms)
 -- ARGV[1] = uuid
 -- return  = 1 실제로 뺐음 / 0 이미 없었음 (호출부는 둘 다 성공으로 본다)
 --

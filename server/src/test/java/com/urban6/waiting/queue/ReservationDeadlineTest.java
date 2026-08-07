@@ -28,7 +28,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
  *
  * <p>Redis의 TTL(PEXPIREAT)은 여기서 돌리는 시계와 무관하게 Redis 자신의 시계를 따른다.
  * 그래서 테스트 시계는 실제 현재 시각에서 출발한다 — 과거에서 시작하면 키가 심자마자 사라지고,
- * 먼 미래에서 시작하면 창(windowId)이 실제 날짜와 어긋난다.
+ * 먼 미래에서 시작하면 창(date)이 실제 날짜와 어긋난다.
  */
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
@@ -57,10 +57,12 @@ class ReservationDeadlineTest {
      */
     @AfterEach
     void clearWindow() {
-        String windowId = dailyWindow.at(clock.instant()).windowId();
-        redis.delete(java.util.List.of(
-                QueueKeys.waiting(windowId), QueueKeys.seq(windowId),
-                QueueKeys.active(windowId), QueueKeys.pollDeadline(windowId)));
+        String date = dailyWindow.at(clock.instant()).date();
+        for (int shard = 0; shard < properties.shardCount(); shard++) {
+            redis.delete(java.util.List.of(
+                    QueueKeys.waiting(date, shard), QueueKeys.seq(date, shard),
+                    QueueKeys.active(date, shard), QueueKeys.pollDeadline(date, shard)));
+        }
     }
 
     @Test
@@ -71,7 +73,7 @@ class ReservationDeadlineTest {
         long afterClaim = activeUntil(ticket);
         assertThat(afterClaim).isEqualTo(clock.millis() + properties.sessionTtl().toMillis());
 
-        waitingQueueService.startReservation(ticket.windowId(), ticket.token());
+        waitingQueueService.startReservation(ticket.date(), ticket.token());
 
         assertThat(activeUntil(ticket)).isEqualTo(clock.millis() + properties.reservationTtl().toMillis());
         assertThat(activeUntil(ticket)).isLessThan(afterClaim);
@@ -81,50 +83,58 @@ class ReservationDeadlineTest {
     @DisplayName("예약 시간이 지나면 활성이 아니게 된다")
     void slotExpiresAfterReservationTtl() {
         Ticket ticket = admit();
-        waitingQueueService.startReservation(ticket.windowId(), ticket.token());
+        waitingQueueService.startReservation(ticket.date(), ticket.token());
 
         clock.advance(properties.reservationTtl().minusSeconds(1));
-        assertThat(waitingQueueService.activeUntil(ticket.windowId(), ticket.token())).isPresent();
+        assertThat(waitingQueueService.activeUntil(ticket.date(), ticket.token())).isPresent();
 
         clock.advance(Duration.ofSeconds(2));
-        assertThat(waitingQueueService.activeUntil(ticket.windowId(), ticket.token())).isEmpty();
+        assertThat(waitingQueueService.activeUntil(ticket.date(), ticket.token())).isEmpty();
     }
 
     @Test
     @DisplayName("만료된 슬롯은 로그인으로 되살릴 수 없다")
     void startReservationCannotReviveAnExpiredSlot() {
         Ticket ticket = admit();
-        waitingQueueService.startReservation(ticket.windowId(), ticket.token());
+        waitingQueueService.startReservation(ticket.date(), ticket.token());
         clock.advance(properties.reservationTtl().plusSeconds(1));
 
-        assertThatThrownBy(() -> waitingQueueService.startReservation(ticket.windowId(), ticket.token()))
+        assertThatThrownBy(() -> waitingQueueService.startReservation(ticket.date(), ticket.token()))
                 .isInstanceOf(QueueException.Expired.class);
 
-        assertThat(waitingQueueService.activeUntil(ticket.windowId(), ticket.token())).isEmpty();
+        assertThat(waitingQueueService.activeUntil(ticket.date(), ticket.token())).isEmpty();
     }
 
     @Test
     @DisplayName("반납하면 만료를 기다리지 않고 즉시 자리가 빈다")
     void releaseFreesTheSlotImmediately() {
         Ticket ticket = admit();
-        waitingQueueService.startReservation(ticket.windowId(), ticket.token());
+        waitingQueueService.startReservation(ticket.date(), ticket.token());
 
-        waitingQueueService.release(ticket.windowId(), ticket.token());
+        waitingQueueService.release(ticket.date(), ticket.token());
 
-        assertThat(waitingQueueService.activeUntil(ticket.windowId(), ticket.token())).isEmpty();
-        assertThat(redis.opsForZSet().size(QueueKeys.active(ticket.windowId()))).isZero();
+        assertThat(waitingQueueService.activeUntil(ticket.date(), ticket.token())).isEmpty();
+        int shard = QueueKeys.shardOf(ticket.token(), properties.shardCount());
+        assertThat(redis.opsForZSet().size(QueueKeys.active(ticket.date(), shard))).isZero();
     }
 
     /** 진입 → 승격 → 입장 확정. 로그인 직전까지의 상태를 만든다. */
     private Ticket admit() {
         Ticket ticket = waitingQueueService.enqueue();
-        waitingQueueService.promote();
-        waitingQueueService.claim(ticket.windowId(), ticket.token());
+        promoteAllShards();
+        waitingQueueService.claim(ticket.date(), ticket.token());
         return ticket;
     }
 
+    /** 토큰이 어느 샤드로 갔는지 모르므로 전부 승격시킨다. */
+    private void promoteAllShards() {
+        for (int shard = 0; shard < properties.shardCount(); shard++) {
+            waitingQueueService.promote(shard);
+        }
+    }
+
     private long activeUntil(Ticket ticket) {
-        return waitingQueueService.activeUntil(ticket.windowId(), ticket.token()).orElseThrow();
+        return waitingQueueService.activeUntil(ticket.date(), ticket.token()).orElseThrow();
     }
 
     /**

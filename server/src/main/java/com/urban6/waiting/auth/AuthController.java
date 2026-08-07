@@ -59,7 +59,7 @@ public class AuthController {
         // AdmissionGuard를 통과했으므로 반드시 있다.
         Pass pass = PassCookie.read(request).orElseThrow();
         try {
-            waitingQueueService.startReservation(pass.windowId(), pass.token());
+            waitingQueueService.startReservation(pass.date(), pass.token());
         } catch (QueueException.Expired e) {
             // 세션을 만들기 전에 걸러야 "로그인은 됐는데 입장권은 없는" 상태가 생기지 않는다.
             log.debug("예약 시간을 열지 못했다. 입장권이 이미 만료됐다.");
@@ -79,7 +79,7 @@ public class AuthController {
         Optional<Pass> pass = PassCookie.read(request);
         if (pass.isPresent()) {
             try {
-                waitingQueueService.release(pass.get().windowId(), pass.get().token());
+                waitingQueueService.release(pass.get().date(), pass.get().token());
             } catch (QueueException e) {
                 // Redis가 죽었다고 로그아웃까지 실패하면 안 된다. 슬롯은 만료로 회수된다.
                 log.warn("입장권 반납 실패. 만료를 기다린다: {}", e.getMessage());

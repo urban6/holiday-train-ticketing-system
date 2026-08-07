@@ -21,6 +21,9 @@ import org.springframework.stereotype.Component;
  * <p>{@link AdmissionScheduler}와 합치지 않은 이유는 주기가 다르기 때문이다 — poll-grace가
  * 수십 초 단위라 승격만큼 자주 훑을 이유가 없다. WAS 다중화 시 단일화가 필요한 것은 같고,
  * {@code queue.scheduler-enabled}를 함께 쓴다.
+ *
+ * <p>샤드를 순차로 돌고 try를 샤드 안에 두는 이유는 {@link AdmissionScheduler}와 같다 —
+ * 한 인스턴스의 장애가 나머지 샤드의 회수를 멈추면 안 된다.
  */
 @Slf4j
 @Component
@@ -33,17 +36,23 @@ public class StaleSweeper {
 
     @Scheduled(fixedDelayString = "${queue.sweep-interval}")
     public void sweep() {
+        for (int shard = 0; shard < waitingQueueService.shardCount(); shard++) {
+            sweepShard(shard);
+        }
+    }
+
+    private void sweepShard(int shard) {
         try {
-            long swept = waitingQueueService.sweepStale();
-            metrics.recordSweep(swept);
+            long swept = waitingQueueService.sweepStale(shard);
+            metrics.recordSweep(shard, swept);
 
             // 회수한 게 없을 때도 찍으면 주기마다 빈 로그가 쌓인다.
             if (swept > 0) {
-                log.info("이탈 회수. swept={}", swept);
+                log.info("이탈 회수. shard={}, swept={}", shard, swept);
             }
         } catch (QueueException.Unavailable e) {
             // AdmissionScheduler와 같은 취급이다.
-            log.warn("이탈 회수 실패. 다음 주기에 재시도한다: {}", e.getMessage());
+            log.warn("이탈 회수 실패. 다음 주기에 재시도한다. shard={}: {}", shard, e.getMessage());
         }
     }
 }

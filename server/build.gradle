@@ -28,10 +28,6 @@ dependencies {
 	// spring-boot-session·spring-session-data-redis·spring-boot-data-redis를 다 끌어온다.
 	implementation 'org.springframework.boot:spring-boot-session-data-redis'
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
-	// 대기열 진입을 Kafka로 흘려 Redis 유입률에 상한을 거는 경로에 쓴다
-	// (queue.enqueue-via-kafka). flyway·session과 같은 이유로 자동 구성 모듈 쪽 이름이다 —
-	// spring-kafka만 넣으면 라이브러리는 클래스패스에 있는데 자동 구성이 붙지 않는다.
-	implementation 'org.springframework.boot:spring-boot-kafka'
 	implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
 	implementation 'org.springframework.boot:spring-boot-starter-jdbc'
 

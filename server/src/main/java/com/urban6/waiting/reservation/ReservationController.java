@@ -3,7 +3,6 @@ package com.urban6.waiting.reservation;
 import com.urban6.waiting.auth.AdmissionGuard;
 import com.urban6.waiting.auth.LoginSession;
 import com.urban6.waiting.member.Member;
-import com.urban6.waiting.queue.QueueProperties;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -29,7 +28,6 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 public class ReservationController {
 
     private final ReservationService reservationService;
-    private final QueueProperties queueProperties;
     private final Clock clock;
 
     /**
@@ -50,15 +48,12 @@ public class ReservationController {
             HttpServletRequest request, Model model) {
 
         Member member = LoginSession.current(request).orElseThrow();
-        model.addAttribute("member", member);
         // 취소 후 리다이렉트가 view=history로 예약내역 탭을 다시 연다.
         model.addAttribute("historyTab", "history".equals(view));
 
         // AdmissionGuard가 통과시키며 남긴 값이다.
         long expiresAt = (long) request.getAttribute(AdmissionGuard.EXPIRES_AT);
         model.addAttribute("remainingMillis", Math.max(0, expiresAt - clock.millis()));
-        // 화면에 숫자를 박아 두면 설정을 바꿀 때마다 화면이 거짓말을 하므로 설정값을 그대로 내린다.
-        model.addAttribute("reservationSeconds", queueProperties.reservationTtl().toSeconds());
 
         model.addAttribute("reservations", reservationService.myReservations(member.id()));
 

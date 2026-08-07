@@ -1,6 +1,6 @@
 -- 폴링이 끊긴 대기자 회수
--- KEYS[1] = waiting:holiday:{windowId}   ZSet (member=uuid, score=seq)
--- KEYS[2] = poll:holiday:{windowId}      ZSet (member=uuid, score=다음 폴링 기한 epoch ms)
+-- KEYS[1] = waiting:{date}:{shard}   ZSet (member=uuid, score=seq)
+-- KEYS[2] = poll:{date}:{shard}      ZSet (member=uuid, score=다음 폴링 기한 epoch ms)
 -- ARGV[1] = nowMillis          기한이 이 시각을 지난 사람은 이탈로 본다
 -- ARGV[2] = maxSweep           한 주기에 회수할 최대 인원
 -- return  = 회수한 인원

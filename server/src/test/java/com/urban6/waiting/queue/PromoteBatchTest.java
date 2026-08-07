@@ -24,6 +24,10 @@ import org.springframework.data.redis.core.StringRedisTemplate;
  */
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest(properties = {
+        // 샤드 하나로 고정한다. max-batch는 한 인스턴스가 한 번에 잡히는 시간을 막는 값이라
+        // 샤드당 상한인데, 샤드가 여럿이면 한 주기 총 승격이 max-batch x 샤드 수가 되어
+        // "한 주기에 max-batch에서 잘린다"를 정확한 수로 단언할 수 없다.
+        "queue.shard-count=1",
         "queue.capacity=100",
         "queue.max-batch=10",
         // 배경 승격이 끼어들면 테스트가 부른 주기의 결과와 섞인다. QueueLeaveTest와 같은 이유다.
@@ -41,8 +45,8 @@ class PromoteBatchTest {
     @AfterEach
     void clearWindow() {
         redis.delete(List.of(
-                QueueKeys.waiting(windowId()), QueueKeys.seq(windowId()),
-                QueueKeys.active(windowId()), QueueKeys.pollDeadline(windowId())));
+                QueueKeys.waiting(date(), 0), QueueKeys.seq(date(), 0),
+                QueueKeys.active(date(), 0), QueueKeys.pollDeadline(date(), 0)));
     }
 
     @Test
@@ -54,16 +58,16 @@ class PromoteBatchTest {
         }
 
         // 정원(100)이 대기 인원(25)보다 크므로, 상한이 없다면 첫 주기에 전원이 올라간다.
-        assertThat(waitingQueueService.promote().promoted()).isEqualTo(maxBatch);
-        assertThat(waitingQueueService.promote().promoted()).isEqualTo(maxBatch);
+        assertThat(waitingQueueService.promote(0).promoted()).isEqualTo(maxBatch);
+        assertThat(waitingQueueService.promote(0).promoted()).isEqualTo(maxBatch);
 
         // 남은 인원만 올라가고 큐가 빈다. 정확한 수를 기대하지 않는 이유는 기동 직후
         // AdmissionScheduler가 한 번 도는데(fixedDelay의 첫 실행) 그 시점이 시드 도중일 수 있어서다.
-        assertThat(waitingQueueService.promote().promoted()).isLessThan(maxBatch);
-        assertThat(redis.opsForZSet().zCard(QueueKeys.waiting(windowId()))).isZero();
+        assertThat(waitingQueueService.promote(0).promoted()).isLessThan(maxBatch);
+        assertThat(redis.opsForZSet().zCard(QueueKeys.waiting(date(), 0))).isZero();
     }
 
-    private String windowId() {
-        return dailyWindow.at(clock.instant()).windowId();
+    private String date() {
+        return dailyWindow.at(clock.instant()).date();
     }
 }

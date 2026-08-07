@@ -36,6 +36,11 @@ import org.springframework.data.redis.core.StringRedisTemplate;
  */
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest(properties = {
+        // 샤드 하나로 고정한다. 여기서 단언하는 것은 순번과 회수 인원의 정확한 수인데, 샤드가
+        // 여럿이면 둘 다 근사가 된다 — 두 명을 연달아 넣어도 서로 다른 샤드에 떨어져 각자
+        // 자기 줄의 1등이 되고, max-sweep 상한도 샤드마다 따로 걸린다.
+        // 샤딩된 동작 자체는 QueueShardingTest가 본다.
+        "queue.shard-count=1",
         // 스케줄러를 사실상 멈춘다. fixedDelay는 기동 직후 한 번 돌고 그다음이 이 간격 뒤라,
         // 크게 잡으면 큐가 비어 있는 기동 시점에만 한 번 돌고 테스트 중에는 다시 오지 않는다.
         //
@@ -68,8 +73,8 @@ class QueueLeaveTest {
     @AfterEach
     void clearWindow() {
         redis.delete(List.of(
-                QueueKeys.waiting(windowId()), QueueKeys.seq(windowId()),
-                QueueKeys.active(windowId()), QueueKeys.pollDeadline(windowId())));
+                QueueKeys.waiting(date(), 0), QueueKeys.seq(date(), 0),
+                QueueKeys.active(date(), 0), QueueKeys.pollDeadline(date(), 0)));
     }
 
     @Test
@@ -80,7 +85,7 @@ class QueueLeaveTest {
 
         assertThat(status(second).ahead()).isEqualTo(1);
 
-        waitingQueueService.leave(first.windowId(), first.token());
+        waitingQueueService.leave(first.date(), first.token());
 
         assertThat(waitingCount()).isEqualTo(1);
         assertThat(status(second).ahead()).isZero();
@@ -93,9 +98,9 @@ class QueueLeaveTest {
     void leaveIsIdempotent() {
         Ticket ticket = waitingQueueService.enqueue();
 
-        waitingQueueService.leave(ticket.windowId(), ticket.token());
-        waitingQueueService.leave(ticket.windowId(), ticket.token());
-        waitingQueueService.leave(ticket.windowId(), "존재하지-않는-토큰");
+        waitingQueueService.leave(ticket.date(), ticket.token());
+        waitingQueueService.leave(ticket.date(), ticket.token());
+        waitingQueueService.leave(ticket.date(), "존재하지-않는-토큰");
 
         assertThat(waitingCount()).isZero();
     }
@@ -106,12 +111,12 @@ class QueueLeaveTest {
         // 입장에 성공해 다음 화면으로 넘어가는 것도 pagehide라, 그 순간 beacon이 늦게 도착할 수 있다.
         // leave가 active까지 지웠다면 방금 받은 자리를 스스로 반납하게 된다.
         Ticket ticket = waitingQueueService.enqueue();
-        waitingQueueService.promote();
-        waitingQueueService.claim(ticket.windowId(), ticket.token());
+        waitingQueueService.promote(0);
+        waitingQueueService.claim(ticket.date(), ticket.token());
 
-        waitingQueueService.leave(ticket.windowId(), ticket.token());
+        waitingQueueService.leave(ticket.date(), ticket.token());
 
-        assertThat(waitingQueueService.activeUntil(ticket.windowId(), ticket.token())).isPresent();
+        assertThat(waitingQueueService.activeUntil(ticket.date(), ticket.token())).isPresent();
         assertThat(activeCount()).isEqualTo(1);
     }
 
@@ -121,7 +126,7 @@ class QueueLeaveTest {
         // 승격된 사람은 더 이상 폴링으로 기한을 갱신하지 않는다. 남겨 두면 기한이 지난 뒤
         // 스위퍼가 매 주기 이미 없는 항목을 waiting에서 지우려 든다.
         waitingQueueService.enqueue();
-        waitingQueueService.promote();
+        waitingQueueService.promote(0);
 
         assertThat(pollDeadlineCount()).isZero();
     }
@@ -133,11 +138,11 @@ class QueueLeaveTest {
 
         // 경계 직전에는 남아 있어야 한다. 짧게 잡으면 순단으로 백오프 중이던 정상 사용자가 빠진다.
         clock.advance(frontDeadline().minusMillis(1));
-        assertThat(waitingQueueService.sweepStale()).isZero();
+        assertThat(waitingQueueService.sweepStale(0)).isZero();
         assertThat(waitingCount()).isEqualTo(1);
 
         clock.advance(Duration.ofMillis(1));
-        assertThat(waitingQueueService.sweepStale()).isEqualTo(1);
+        assertThat(waitingQueueService.sweepStale(0)).isEqualTo(1);
         assertThat(waitingCount()).isZero();
         assertThat(pollDeadlineCount()).isZero();
     }
@@ -152,12 +157,12 @@ class QueueLeaveTest {
         status(ticket);
 
         clock.advance(frontDeadline().minusSeconds(1));
-        assertThat(waitingQueueService.sweepStale()).isZero();
+        assertThat(waitingQueueService.sweepStale(0)).isZero();
         assertThat(waitingCount()).isEqualTo(1);
 
         // 조회를 멈추면 그 시점부터 다시 센다.
         clock.advance(Duration.ofSeconds(2));
-        assertThat(waitingQueueService.sweepStale()).isEqualTo(1);
+        assertThat(waitingQueueService.sweepStale(0)).isEqualTo(1);
     }
 
     @Test
@@ -171,7 +176,7 @@ class QueueLeaveTest {
 
         clock.advance(frontDeadline().plusSeconds(1));
 
-        assertThat(waitingQueueService.sweepStale()).isEqualTo(1);
+        assertThat(waitingQueueService.sweepStale(0)).isEqualTo(1);
         assertThat(waitingCount()).isZero();
     }
 
@@ -187,11 +192,11 @@ class QueueLeaveTest {
 
         clock.advance(frontDeadline().plusSeconds(1));
 
-        assertThat(waitingQueueService.sweepStale()).isEqualTo(properties.maxSweep());
+        assertThat(waitingQueueService.sweepStale(0)).isEqualTo(properties.maxSweep());
         assertThat(waitingCount()).isEqualTo(1);
 
         // 남은 인원은 다음 주기에 빠진다.
-        assertThat(waitingQueueService.sweepStale()).isEqualTo(1);
+        assertThat(waitingQueueService.sweepStale(0)).isEqualTo(1);
         assertThat(waitingCount()).isZero();
     }
 
@@ -204,19 +209,19 @@ class QueueLeaveTest {
     }
 
     private Status status(Ticket ticket) {
-        return waitingQueueService.status(ticket.windowId(), ticket.token());
+        return waitingQueueService.status(ticket.date(), ticket.token());
     }
 
     private long waitingCount() {
-        return count(QueueKeys.waiting(windowId()));
+        return count(QueueKeys.waiting(date(), 0));
     }
 
     private long pollDeadlineCount() {
-        return count(QueueKeys.pollDeadline(windowId()));
+        return count(QueueKeys.pollDeadline(date(), 0));
     }
 
     private long activeCount() {
-        return count(QueueKeys.active(windowId()));
+        return count(QueueKeys.active(date(), 0));
     }
 
     private long count(String key) {
@@ -224,7 +229,7 @@ class QueueLeaveTest {
         return size == null ? 0 : size;
     }
 
-    private String windowId() {
-        return dailyWindow.at(clock.instant()).windowId();
+    private String date() {
+        return dailyWindow.at(clock.instant()).date();
     }
 }

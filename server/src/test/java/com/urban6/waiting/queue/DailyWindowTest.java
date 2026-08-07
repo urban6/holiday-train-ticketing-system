@@ -51,11 +51,11 @@ class DailyWindowTest {
     }
 
     @Test
-    @DisplayName("windowId는 서울 날짜의 yyyyMMdd다 — UTC로는 전날인 시각에도")
-    void windowIdFollowsSeoulDate() {
+    @DisplayName("date는 서울 날짜의 yyyyMMdd다 — UTC로는 전날인 시각에도")
+    void dateFollowsSeoulZone() {
         // 서울 07:00은 UTC로 전날 22:00이다. 존을 잘못 쓰면 여기서 20260724가 나온다.
         assertThat(seoul(7, 0, 0)).isEqualTo(Instant.parse("2026-07-24T22:00:00Z"));
-        assertThat(at(seoul(7, 0, 0)).windowId()).isEqualTo("20260725");
+        assertThat(at(seoul(7, 0, 0)).date()).isEqualTo("20260725");
     }
 
     @Test
