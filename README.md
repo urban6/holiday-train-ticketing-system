@@ -4,17 +4,15 @@
 
 ## 요약
 
-- Redis ZSet + Lua 기반 대기열 구현
-- 150만 건 진입 테스트에서 순번 유실·중복 없이 동작 검증
-- WAS 확장을 통해 처리량을 138,548 req/s까지 증가
+- Redis ZSet + Lua Script 기반 대기열 구현
+- 150만 건 진입 테스트에서 순번 유실, 중복 없이 동작 검증
+- 단일 노드 구성에서 WAS 확장으로 138,548 req/s 확인
 - Redis Benchmark 대비 99.0% 수준으로 Redis 단일 노드 처리 한계 확인
-- Redis Cluster 기반 확장 구조 설계 및 Failover 검증
+- Redis Cluster 3샤드 분산으로 Redis CPU 90.3% → 약 46%, 단일 노드 포화 해소 확인
 
 ## 검증 범위
 
-대기열 진입, 순번 조회, 입장 제어 과정과 Redis 단일 노드의 처리 한계를 검증했습니다.
-
-좌석 선택, 결제, 회원가입 과정은 제외하고 대기열 처리 성능 검증에 집중했습니다.
+대기열 진입부터 순번 조회, 입장 제어까지의 흐름을 설계하고 Redis 단일 노드의 처리 한계를 검증했습니다. 좌석 선택, 결제, 회원가입 등 예약 기능 구현은 제외하고 대규모 트래픽 상황에서 대기열 처리 성능과 병목 지점 분석에 집중했습니다.
 
 ## 아키텍처
 
@@ -106,6 +104,23 @@ flowchart LR
 
 대신 샤드별 순번을 기반으로 근사 순번을 계산하여 사용했습니다.
 
+### Cluster 확장 검증
+
+Redis Cluster 적용 후 Hash Tag 기반 3샤드 구조에서 단일 Redis 병목이 완화되는지 검증했습니다.
+
+| 구성 | 처리량 | Redis CPU |
+| --- | ---: | ---: |
+| 1샤드 | 113,800 req/s | 90.3% |
+| 3샤드 | 137,150 req/s | 약 46% |
+
+3샤드 구성에서는 Redis CPU 사용률이 감소했지만, WAS CPU가 함께 포화되어 처리량 증가는 20.5% 수준에 그쳤습니다.
+
+즉, Redis Cluster는 Redis 단일 노드 병목은 완화했지만, 이후 병목은 애플리케이션 계층으로 이동했습니다.
+
+이후 레플리카를 빼서 확보한 자원만큼 WAS를 13대까지 늘려 다시 측정했습니다. 처리량은 195,140 req/s까지 올랐지만 Redis CPU는 54% 수준에 머물렀습니다.
+
+3샤드가 실제로 포화하는 지점까지 밀려면 WAS와 부하 생성기를 합쳐 110 vCPU 안팎이 필요한데, 계정 vCPU 한도가 64여서 여기까지만 측정했습니다.
+
 ## 문서
 
 | 문서 | 내용 |
@@ -113,3 +128,4 @@ flowchart LR
 | [docs/redis-single-thread.md](docs/redis-single-thread.md) | Redis 단일 스레드 구조와 처리 한계 |
 | [docs/redis-topology.md](docs/redis-topology.md) | Standalone, Replication, Sentinel, Cluster 비교 |
 | [docs/redis-cluster-bootstrap.md](docs/redis-cluster-bootstrap.md) | Redis Cluster 구축 및 Failover 실습 |
+| [docs/aws-load-test.md](docs/aws-load-test.md) | AWS 2라운드 부하 측정 기록 |
