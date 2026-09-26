@@ -22,6 +22,10 @@
 #
 # ── 기록 ──────────────────────────────────────────────────────────────────
 #
+# 2026-09-26 주의: 아래 기록은 전부 -r 없이 잰 값이다. 모든 요청이 같은 멤버를 덮어써
+# ZSet에는 1명만 있었으므로 "깊이 20만/150만"은 실제 깊이가 아니고, 앱 수치의 분모로도
+# 쓸 수 없다. -r을 넣은 지금 스크립트로 다시 재야 한다.
+#
 # 아래 07-22·07-26 수치는 **키 2개짜리 옛 enqueue.lua**를 잰 값이다. 07-28의
 # f46b6bb에서 poll ZSet(KEYS[3]·ARGV[4])이 붙었는데 이 스크립트가 따라가지 않아,
 # 그 뒤로는 매 요청이 @user_script:20에서 에러로 끝나고 redis-benchmark가 rps를
@@ -120,20 +124,20 @@ BENCH_POLL="bench:poll"
 bench() {  # bench <clients>
     "${R[@]}" DEL "$BENCH_Z" "$BENCH_SEQ" "$BENCH_POLL" > /dev/null
 
-    # 멤버에 __rand_int__를 넣는 게 중요하다. redis-benchmark가 매 요청 다른 값으로 치환한다.
-    # 고정 멤버를 쓰면 ZADD가 같은 항목의 score만 갱신해 ZSet이 자라지 않고,
-    # 실제 대기열과 다른 워크로드를 재게 된다.
+    # __rand_int__는 -r을 줘야 치환된다. 빠지면 모든 요청이 같은 멤버를 덮어써 ZSet에 1명만 남는다.
+    # 난수라 드물게 겹치므로 실제 저장 인원(ZCARD)을 함께 찍는다(docs/redis-benchmark-members.md).
     local LINE
     LINE=$(redis-benchmark -h "$REDIS_HOST" -p "$REDIS_PORT" \
-               -n "$REQUESTS" -c "$1" -P 1 -q \
+               -n "$REQUESTS" -c "$1" -P 1 -q -r 100000000000 \
                evalsha "$SHA" 3 "$BENCH_Z" "$BENCH_SEQ" "$BENCH_POLL" \
                "m:__rand_int__" "$DEADLINE" "$DEADLINE" "$DEADLINE" \
                2> /dev/null | tr '\r' '\n' | grep 'requests per second' | tail -1)
 
     # rps 숫자는 줄 앞이 아니라 명령어 접두사 뒤에 온다. '^[0-9.]+'로는 못 잡는다.
-    printf "  clients=%-4s  %9s rps   %s\n" "$1" \
+    printf "  clients=%-4s  %9s rps   %s   members=%s\n" "$1" \
         "$(echo "$LINE" | grep -oE '[0-9]+\.[0-9]+ requests' | grep -oE '^[0-9.]+' | cut -d. -f1)" \
-        "$(echo "$LINE" | grep -oE 'p50=[0-9.]+ msec')"
+        "$(echo "$LINE" | grep -oE 'p50=[0-9.]+ msec')" \
+        "$("${R[@]}" ZCARD "$BENCH_Z")"
 }
 
 echo
