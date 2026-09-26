@@ -10,20 +10,10 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * 폴링이 끊긴 대기자를 대기열에서 회수한다.
+ * 폴링이 끊긴 대기자를 회수한다. leave가 오지 않는 크래시·기기 꺼짐·네트워크 단절을 덮는다.
+ * 방치하면 이탈자가 승격되어 아무도 쓰지 않는 슬롯을 admission-grace 동안 잡는다.
  *
- * <p>이탈 신호(leave)가 아예 오지 않는 경로 — 브라우저 크래시, 기기 꺼짐, 백그라운드 탭 종료,
- * 네트워크 단절 — 를 덮는 유일한 수단이다. 판정은 "다음 조회가 올 기한을 넘겼는가"로 한다.
- *
- * <p>방치하면 순번만 부풀지 않는다. <b>유령도 순서가 되면 승격되어 아무도 쓰지 않는 활성 슬롯을
- * admission-grace만큼 잡으므로 실효 정원이 깎인다.</b>
- *
- * <p>{@link AdmissionScheduler}와 합치지 않은 이유는 주기가 다르기 때문이다 — poll-grace가
- * 수십 초 단위라 승격만큼 자주 훑을 이유가 없다. WAS 다중화 시 단일화가 필요한 것은 같고,
- * {@code queue.scheduler-enabled}를 함께 쓴다.
- *
- * <p>샤드를 순차로 돌고 try를 샤드 안에 두는 이유는 {@link AdmissionScheduler}와 같다 —
- * 한 인스턴스의 장애가 나머지 샤드의 회수를 멈추면 안 된다.
+ * <p>다중화 시 한 대에서만 돌리는 것은 {@link AdmissionScheduler}와 같다.
  */
 @Slf4j
 @Component
@@ -46,12 +36,10 @@ public class StaleSweeper {
             long swept = waitingQueueService.sweepStale(shard);
             metrics.recordSweep(shard, swept);
 
-            // 회수한 게 없을 때도 찍으면 주기마다 빈 로그가 쌓인다.
             if (swept > 0) {
                 log.info("이탈 회수. shard={}, swept={}", shard, swept);
             }
         } catch (QueueException.Unavailable e) {
-            // AdmissionScheduler와 같은 취급이다.
             log.warn("이탈 회수 실패. 다음 주기에 재시도한다. shard={}: {}", shard, e.getMessage());
         }
     }

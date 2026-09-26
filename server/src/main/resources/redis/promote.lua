@@ -3,42 +3,37 @@
 -- KEYS[2] = active:{date}:{shard}    ZSet (member=uuid, score=만료 epoch ms)
 -- KEYS[3] = poll:{date}:{shard}      ZSet (member=uuid, score=다음 폴링 기한 epoch ms)
 -- ARGV[1] = nowMillis
--- ARGV[2] = capacity              활성 정원
--- ARGV[3] = maxBatch              한 번에 승격할 최대 인원
--- ARGV[4] = admissionGraceMillis  승격 후 claim까지 주는 시간
--- ARGV[5] = activeDeadlineMillis  active 키 자체의 TTL (창 마감 + waitingGrace)
+-- ARGV[2] = capacity
+-- ARGV[3] = maxBatch
+-- ARGV[4] = admissionGraceMillis
+-- ARGV[5] = activeDeadlineMillis  active 키 자체의 만료 시각
 -- return  = { promoted, active, waiting }
 --
--- 세는 것과 꺼내는 것이 한 스크립트여야 한다. 따로 하면 그 사이에 만료·승격이 끼어들어 정원을 넘긴다.
+-- 세는 것과 꺼내는 것이 한 스크립트여야 정원을 넘기지 않는다.
 
 local now = tonumber(ARGV[1])
 
--- score(=만료시각)가 지난 항목을 회수한다. 정원을 세기 전에 해야 한다.
+-- 만료된 항목을 정원을 세기 전에 회수한다.
 redis.call('ZREMRANGEBYSCORE', KEYS[2], '-inf', now)
 local active = redis.call('ZCARD', KEYS[2])
 
--- 상한이 없으면 정원이 통째로 빈 순간 만 명을 한 번에 올려 그게 그대로 지연 스파이크가 된다.
 local room = math.min(tonumber(ARGV[2]) - active, tonumber(ARGV[3]))
 if room <= 0 then
     return {0, active, redis.call('ZCARD', KEYS[1])}
 end
 
--- ZPOPMIN은 꺼내기와 지우기가 한 연산이다. 반환은 { member1, score1, member2, score2, ... } 평면 배열.
 local popped = redis.call('ZPOPMIN', KEYS[1], room)
 if #popped == 0 then
     return {0, active, 0}
 end
 
--- ZADD 한 번에 몰 수도 있지만 unpack은 Lua 스택 한계(약 8000)가 있다. 루프는 maxBatch에만 비례한다.
--- 폴링 기한에서 빼는 것도 여기서 한다. 승격된 사람은 더 이상 폴링으로 기한을 갱신하지 않으므로,
--- 남겨 두면 기한이 지난 뒤 스위퍼가 매번 걸어 이미 없는 항목을 waiting에서 지우려 든다.
+-- unpack으로 한 번에 넘기지 않는다. Lua 스택 한계(약 8000)에 걸리면 스크립트가 깨진다.
 local expireAt = now + tonumber(ARGV[4])
 for i = 1, #popped, 2 do
     redis.call('ZADD', KEYS[2], expireAt, popped[i])
     redis.call('ZREM', KEYS[3], popped[i])
 end
 
--- 절대 시각이라 매 주기 걸어도 결과가 같다.
 redis.call('PEXPIREAT', KEYS[2], ARGV[5])
 
 local promoted = #popped / 2

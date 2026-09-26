@@ -7,20 +7,12 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.Arrays;
 import java.util.Optional;
 
-/**
- * 입장 확정 시 심은 {@code pass} 쿠키를 읽는다. 값의 형식은 {@code "{date}.{token}"}으로
- * {@link WaitingQueueController#PASS_COOKIE}가 만드는 것과 같은 규약이다.
- */
+/** 입장 확정 시 심은 {@code pass} 쿠키({@code "{date}.{token}"})를 읽는다. */
 public final class PassCookie {
 
     private PassCookie() {}
 
-    /**
-     * 쿠키가 없거나, 형식이 깨졌거나, date가 날짜 형식이 아니면 비어 있다.
-     *
-     * <p>"Redis에 살아 있는가"는 보지 않는다({@link AdmissionGuard}의 몫). 여기는
-     * <b>키로 쓸 수 있는 값인지</b>까지만 책임진다 — date가 그대로 Redis 키가 된다.
-     */
+    /** Redis 키로 쓸 수 있는 형식인지까지만 본다. 살아 있는지는 {@link AdmissionGuard}가 본다. */
     public static Optional<Pass> read(HttpServletRequest request) {
         Cookie[] cookies = request.getCookies();
         if (cookies == null) {
@@ -39,8 +31,6 @@ public final class PassCookie {
             return Optional.empty();
         }
 
-        // token에 '.'이 없지만 limit 2로 자른다. 값이 예상과 달라졌을 때 조용히
-        // 엉뚱한 조각을 집는 것보다 낫다.
         String[] parts = value.split("\\.", 2);
         if (parts.length != 2 || !QueueKeys.isValidDate(parts[0]) || parts[1].isBlank()) {
             return Optional.empty();

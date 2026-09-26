@@ -7,24 +7,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
-/**
- * 열차 조회. {@link com.urban6.waiting.member.MemberRepository}와 같은 규약이다 —
- * JPA 없이 {@link JdbcClient}로 SQL을 그대로 쓰고, 결과는 레코드 생성자에 매핑한다.
- */
 @Repository
 @RequiredArgsConstructor
 public class TrainRepository {
 
     private final JdbcClient jdbcClient;
 
-    /**
-     * 출발지·도착지·출발일·좌석종류가 일치하는 열차를, 요청한 출발시간 이후로 시간 순으로 준다.
-     *
-     * <p>출발시간은 "그 시각 이후"({@code >=})로 본다. 매진인 열차도 결과에 포함한다 —
-     * 목록에서 빼면 "자리가 없다"와 "열차 자체가 없다"가 구분되지 않는다.
-     *
-     * <p>train.id를 train_id로 별칭해 {@link TrainAvailability#trainId()}에 맞춘다.
-     */
+    /** 매진인 열차도 포함한다. 빼면 자리가 없는 것과 열차가 없는 것이 구분되지 않는다. */
     public List<TrainAvailability> search(String origin, String destination,
                                           LocalDate departureDate, LocalTime departureTime,
                                           SeatClass seatClass) {

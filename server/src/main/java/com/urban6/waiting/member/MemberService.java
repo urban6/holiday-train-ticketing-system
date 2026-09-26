@@ -10,27 +10,14 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class MemberService {
 
-    /**
-     * 없는 아이디로 로그인을 시도했을 때 대신 비교할 해시. 바로 돌아가면 그 응답만 유독 빨라
-     * 어떤 아이디가 존재하는지 밖에서 알아낼 수 있다(user enumeration).
-     *
-     * <p>어떤 입력으로도 맞을 수 없는, 형식만 갖춘 값이다.
-     */
+    /** 없는 아이디도 같은 시간을 쓰게 대신 비교할 해시. 바로 돌아가면 응답 시간으로 아이디 존재가 드러난다. */
     private static final String DUMMY_HASH =
             "$2a$10$7sMljHqcPUsgJyYoGwDMXe1aG2JMxBWNJ03RGGq/GWm2uURvX55Ka";
 
     private final MemberRepository memberRepository;
     private final PasswordEncoder passwordEncoder;
 
-    /**
-     * 아이디와 비밀번호를 확인한다.
-     *
-     * <p>BCrypt는 의도적으로 느리다 — cost 10에서 수십 밀리초의 <b>CPU 시간</b>을 쓴다.
-     * 가상 스레드도 CPU 연산은 캐리어 스레드를 그대로 점유하므로 대기열 조회와 성격이 정반대다.
-     * 1인당 1회이고 활성 정원이 이미 상한이지만, 로그인 부하를 잴 때는 알고 재야 한다.
-     *
-     * @throws MemberException.InvalidCredentials 아이디가 없거나 비밀번호가 틀렸다
-     */
+    /** BCrypt는 수십 ms의 CPU를 쓰고, 가상 스레드여도 그동안 캐리어 스레드를 점유한다. */
     public Member authenticate(String loginId, String rawPassword) {
         Optional<Credentials> found = memberRepository.findByLoginId(loginId);
 
