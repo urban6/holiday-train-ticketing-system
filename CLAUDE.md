@@ -70,8 +70,9 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 명절 승차권 예매를 가정한 대규모 예약 시스템 **학습** 프로젝트. 목적은 기능 완성이 아니라
 **대규모 트래픽에서 병목이 어디서 어떤 모양으로 나타나는지 측정하고, 변경 전후를 비교**하는 것.
-설계 결정과 트레이드오프의 진실 원천은 항상 `README.md`와 `server/src/main/resources/application.yml`의
-주석이다 — 코드를 고치기 전에 먼저 읽는다.
+설계 결정과 트레이드오프는 `README.md`와 `docs/`에, 튜닝값의 근거는 `server/src/main/resources/application.yml`
+주석에 짧게 적혀 있다. 코드를 고치기 전에 먼저 읽고, 더 긴 결정 배경이 필요하면 git 이력을 본다.
+코드 주석은 지우면 조용히 깨지는 제약만 남긴다. 코드를 다시 설명하는 주석이나 측정 과정 이야기는 쓰지 않는다.
 
 ## 스택 · 구조
 - Spring Boot 4.1 · Java 21 **가상 스레드** · Redis 8(Docker, 1코어) · PostgreSQL 18(Docker, 호스트 포트 **5433**) · Flyway · Thymeleaf · k6.
