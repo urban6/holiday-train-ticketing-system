@@ -97,7 +97,7 @@ MAXVUS=${MAXVUS:-30000}
 
 # mixed 전용. 폴링 VU가 설 자리를 만드는 깊이이고, 워밍업과 달리 지우지 않는다.
 #
-# 50만은 README「진입 스파이크가 조회로 번지는 정도」의 값을 그대로 재현하는 깊이다.
+# 50만은 docs/aws-load-test.md「진입 스파이크가 조회로 번지는 정도」에서 쓴 깊이다.
 # status.lua의 주기 상한 구간(6만 번째 뒤쪽, application.yml:123)을 한참 넘겨서,
 # 폴링 VU가 어디에 서든 그 뒤로 깊이가 남아 있다.
 #
@@ -376,7 +376,7 @@ SECONDS=0
 
 # NO_REUSE는 k6가 시스템 환경변수를 상속해서 그냥 두면 넘어가지만, USERS·VUS처럼 명시로
 # 넘긴다 — 빠뜨리면 연결 재사용이 켜져 처리량이 34% 후하게 나오는데 출력만 봐서는 어느
-# 조건으로 잰 런인지 알 수 없다(README「NO_REUSE」).
+# 조건으로 잰 런인지 알 수 없다(infra/aws/README.md「4. 측정」).
 NO_REUSE=${NO_REUSE:-0}
 
 if [ "$SCENARIO" = enqueue ]; then

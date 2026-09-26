@@ -40,7 +40,7 @@
 한 스레드가 명령을 하나씩 끝까지 처리하므로 **명령 하나는 그 자체로 원자적**입니다. 락을 걸어서 얻은 성질이 아니라
 스레드가 하나여서 공짜로 따라온 성질입니다. Lua 스크립트는 그 원자 단위를 여러 명령으로 넓히는 장치이고,
 [`enqueue.lua`](../server/src/main/resources/redis/enqueue.lua)가 `INCR`과 `ZADD`를 하나로 묶어 순번과 등록이
-어긋나지 않게 하는 것이 그 쓰임입니다(README「Redis 기반 대기열」).
+어긋나지 않게 하는 것이 그 쓰임입니다(README「설계」).
 
 바꿔 말하면 **원자성은 목적이 아니라 부산물**입니다. 목적이었다면 트랜잭션이나 락으로도 얻을 수 있었을 텐데,
 Redis는 그것을 얻으려고 싱글 스레드를 고른 것이 아니라 싱글 스레드로 만들었더니 딸려 온 쪽입니다.
@@ -58,7 +58,7 @@ Redis는 그것을 얻으려고 싱글 스레드를 고른 것이 아니라 싱�
 | 항목 수에 비례하는 Lua 스크립트 | 정원이 통째로 빈 순간의 일괄 승격, 대량 이탈이 몰린 순간의 회수 |
 
 마지막 줄이 이 프로젝트가 [`promote.lua`](../server/src/main/resources/redis/promote.lua)에 `max-batch`,
-[`sweep.lua`](../server/src/main/resources/redis/sweep.lua)에 `max-sweep` 상한을 건 이유입니다(README「배치 승격 상한 설정」).
+[`sweep.lua`](../server/src/main/resources/redis/sweep.lua)에 `max-sweep` 상한을 건 이유입니다(application.yml의 `max-batch`·`max-sweep` 주석).
 스크립트를 짧게 만드는 것이 아니라 **한 번에 훑는 개수에 상한을 두는 것**이 요점입니다.
 
 스크립트가 이미 길어졌을 때의 안전장치도 알아 둘 만합니다.
