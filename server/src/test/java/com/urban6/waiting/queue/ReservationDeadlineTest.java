@@ -61,7 +61,8 @@ class ReservationDeadlineTest {
         for (int shard = 0; shard < properties.shardCount(); shard++) {
             redis.delete(java.util.List.of(
                     QueueKeys.waiting(date, shard), QueueKeys.seq(date, shard),
-                    QueueKeys.active(date, shard), QueueKeys.pollDeadline(date, shard)));
+                    QueueKeys.active(date, shard), QueueKeys.pollDeadline(date, shard),
+                    QueueKeys.stage(date, shard)));
         }
     }
 
@@ -116,6 +117,54 @@ class ReservationDeadlineTest {
         assertThat(waitingQueueService.activeUntil(ticket.date(), ticket.token())).isEmpty();
         int shard = QueueKeys.shardOf(ticket.token(), properties.shardCount());
         assertThat(redis.opsForZSet().size(QueueKeys.active(ticket.date(), shard))).isZero();
+    }
+
+    @Test
+    @DisplayName("입장 확정을 다시 불러도 만료가 늘어나지 않는다")
+    void repeatedClaimDoesNotExtendTheSlot() {
+        Ticket ticket = admit();
+        long afterClaim = activeUntil(ticket);
+
+        clock.advance(properties.sessionTtl().minusMinutes(1));
+        waitingQueueService.claim(ticket.date(), ticket.token());
+
+        assertThat(activeUntil(ticket)).isEqualTo(afterClaim);
+    }
+
+    @Test
+    @DisplayName("로그인을 다시 해도 예약 시간이 늘어나지 않는다")
+    void repeatedLoginDoesNotExtendTheSlot() {
+        Ticket ticket = admit();
+        waitingQueueService.startReservation(ticket.date(), ticket.token());
+        long afterLogin = activeUntil(ticket);
+
+        clock.advance(properties.reservationTtl().minusMinutes(1));
+        waitingQueueService.startReservation(ticket.date(), ticket.token());
+
+        assertThat(activeUntil(ticket)).isEqualTo(afterLogin);
+    }
+
+    @Test
+    @DisplayName("로그인한 뒤 입장 확정을 불러도 sessionTtl로 되돌아가지 않는다")
+    void claimAfterLoginDoesNotRestoreSessionTtl() {
+        Ticket ticket = admit();
+        waitingQueueService.startReservation(ticket.date(), ticket.token());
+        long afterLogin = activeUntil(ticket);
+
+        clock.advance(Duration.ofMinutes(1));
+        waitingQueueService.claim(ticket.date(), ticket.token());
+
+        assertThat(activeUntil(ticket)).isEqualTo(afterLogin);
+    }
+
+    @Test
+    @DisplayName("입장 확정 없이는 예약 시간을 시작할 수 없다")
+    void startReservationRequiresClaim() {
+        Ticket ticket = waitingQueueService.enqueue();
+        promoteAllShards();
+
+        assertThatThrownBy(() -> waitingQueueService.startReservation(ticket.date(), ticket.token()))
+                .isInstanceOf(QueueException.Expired.class);
     }
 
     /** 진입 → 승격 → 입장 확정. 로그인 직전까지의 상태를 만든다. */

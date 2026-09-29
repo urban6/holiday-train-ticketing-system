@@ -21,7 +21,8 @@ public class WaitingQueueRepository {
     private final StringRedisTemplate redis;
     private final QueueProperties properties;
     private final RedisScript<Long> enqueueScript;
-    private final RedisScript<Long> restampScript;
+    private final RedisScript<Long> claimScript;
+    private final RedisScript<Long> reserveScript;
     private final RedisScript<Long> leaveScript;
     private final RedisScript<Long> sweepScript;
     @SuppressWarnings("rawtypes")
@@ -90,16 +91,26 @@ public class WaitingQueueRepository {
         return new Promotion(result.get(0), result.get(1), result.get(2));
     }
 
-    /** @return 활성이 아니거나 이미 만료됐으면 false */
-    public boolean restamp(String date, String uuid, long nowMillis, Duration ttl, String operation) {
+    /** 처음 확정할 때만 만료를 sessionTtl로 찍는다. @return 활성이 아니거나 이미 만료됐으면 false */
+    public boolean claim(String date, String uuid, long nowMillis, Duration sessionTtl) {
+        return advanceStage(claimScript, "입장 확정", date, uuid, nowMillis, sessionTtl);
+    }
+
+    /** 처음 로그인할 때만 만료를 reservationTtl로 찍는다. @return 활성이 아니거나 만료됐거나 확정 전이면 false */
+    public boolean startReservation(String date, String uuid, long nowMillis, Duration reservationTtl) {
+        return advanceStage(reserveScript, "예약 시간 시작", date, uuid, nowMillis, reservationTtl);
+    }
+
+    private boolean advanceStage(RedisScript<Long> script, String operation, String date, String uuid,
+                                 long nowMillis, Duration ttl) {
         int shard = shardOf(uuid);
-        Long restamped = execute(restampScript, operation, date, shard,
-                List.of(QueueKeys.active(date, shard)),
+        Long advanced = execute(script, operation, date, shard,
+                List.of(QueueKeys.active(date, shard), QueueKeys.stage(date, shard)),
                 uuid,
                 String.valueOf(nowMillis),
                 String.valueOf(ttl.toMillis()));
 
-        return restamped != null && restamped == 1L;
+        return advanced != null && advanced == 1L;
     }
 
     public boolean leave(String date, String uuid) {

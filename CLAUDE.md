@@ -94,7 +94,7 @@ java -jar server/build/libs/waiting-0.0.1.jar --spring.profiles.active=loadtest
 
 ## 반드시 지킬 규칙 (어기면 조용히 깨진다)
 - **Redis가 진실 원천이다.** 정원·만료·순번은 모두 `active`/`waiting` ZSet에서 나온다. 만료 판정용 인터셉터나 항목별 TTL 키를 새로 만들지 말고, 기존 `active` ZSet의 score 하나를 진실 원천으로 유지한다.
-- **동시성이 걸린 다중 Redis 명령은 Lua로 원자적으로 묶는다.** 개별 명령을 나열하면 그 사이에 다른 요청이 끼어들어 "앞 + 뒤 + 1 = 전체"가 어긋난다. 새 원자 연산은 `src/main/resources/redis/*.lua`에 추가한다(기존: `enqueue`·`status`·`promote`·`restamp`·`leave`·`sweep`).
+- **동시성이 걸린 다중 Redis 명령은 Lua로 원자적으로 묶는다.** 개별 명령을 나열하면 그 사이에 다른 요청이 끼어들어 "앞 + 뒤 + 1 = 전체"가 어긋난다. 새 원자 연산은 `src/main/resources/redis/*.lua`에 추가한다(기존: `enqueue`·`status`·`promote`·`claim`·`reserve`·`leave`·`sweep`).
 - **한 주기에 여러 항목을 훑는 스크립트에는 반드시 상한을 건다.** Redis는 단일 스레드라 그 실행 시간이 그대로 다른 요청의 지연이 된다. `promote`의 `max-batch`, `sweep`의 `max-sweep`이 같은 이유다.
 - **인증이 필요한 새 화면·엔드포인트를 추가하면 반드시 `auth/WebConfig`의 게이트 화이트리스트에 등록한다.** 게이트(`AdmissionGuard`/`LoginGuard`)는 `/**`가 아니라 명시적 경로만 탄다 — 빠뜨리면 제한 시간이 지나도 그 경로는 그대로 열린다.
 - **설정 기본값을 코드에 두지 않는다.** `application.yml`의 `queue` 블록이 유일한 진실 원천이라 블록이 없으면 기동에 실패한다. 튜닝값(`capacity`·`max-batch`·`reservation-ttl` 등)을 바꿀 곳은 그곳 하나뿐이고, 화면 문구도 이 값을 그대로 읽는다.

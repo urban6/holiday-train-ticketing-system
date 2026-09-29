@@ -22,8 +22,13 @@ public class QueueConfig {
     }
 
     @Bean
-    public RedisScript<Long> restampScript() {
-        return script("redis/restamp.lua", Long.class);
+    public RedisScript<Long> claimScript() {
+        return script("redis/claim.lua", Long.class);
+    }
+
+    @Bean
+    public RedisScript<Long> reserveScript() {
+        return script("redis/reserve.lua", Long.class);
     }
 
     @Bean

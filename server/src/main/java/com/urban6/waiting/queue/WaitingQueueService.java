@@ -87,7 +87,7 @@ public class WaitingQueueService {
     public void claim(String date, String token) {
         QueueKeys.requireValidDate(date);
 
-        if (!repository.restamp(date, token, clock.millis(), properties.sessionTtl(), "입장 확정")) {
+        if (!repository.claim(date, token, clock.millis(), properties.sessionTtl())) {
             throw new QueueException.Expired("입장 가능 시간이 지났습니다.");
         }
     }
@@ -96,7 +96,7 @@ public class WaitingQueueService {
     public void startReservation(String date, String token) {
         QueueKeys.requireValidDate(date);
 
-        if (!repository.restamp(date, token, clock.millis(), properties.reservationTtl(), "예약 시간 시작")) {
+        if (!repository.startReservation(date, token, clock.millis(), properties.reservationTtl())) {
             throw new QueueException.Expired("입장 가능 시간이 지났습니다.");
         }
     }

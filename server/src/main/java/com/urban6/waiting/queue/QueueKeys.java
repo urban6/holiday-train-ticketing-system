@@ -10,6 +10,7 @@ import java.util.regex.Pattern;
  * waiting:{date}:{shard}:seq   String 샤드별 단조 증가 순번 카운터
  * active:{date}:{shard}        ZSet   member=uuid, score=만료 epoch ms
  * poll:{date}:{shard}          ZSet   member=uuid, score=다음 폴링 기한 epoch ms
+ * stage:{date}:{shard}         Hash   field=uuid, value=claimed | reserving
  * </pre>
  *
  * <p>{@code date}를 키에서 빼면 안 된다. 키의 유예가 자정을 넘어 다음 창과 섞이고,
@@ -82,5 +83,14 @@ public final class QueueKeys {
      */
     public static String pollDeadline(String date, int shard) {
         return "poll:%s:{%s}".formatted(date, tag(shard));
+    }
+
+    /**
+     * 활성 항목이 입장 확정·로그인 중 어디까지 왔는지. 만료 판정은 active의 score만 한다.
+     * 만료된 항목의 필드는 지우지 않는다. 토큰이 재사용되지 않고 active 검사에서 먼저 걸러지므로
+     * 읽히지 않으며, 키가 active와 같은 시각에 통째로 만료된다.
+     */
+    public static String stage(String date, int shard) {
+        return "stage:%s:{%s}".formatted(date, tag(shard));
     }
 }
