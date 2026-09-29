@@ -93,10 +93,10 @@ public class WaitingQueueService {
     }
 
     /** 로그인 직후 부른다. 남은 sessionTtl을 들고 가지 않고 reservationTtl로 다시 찍어 정원을 빨리 돌린다. */
-    public void startReservation(String date, String token) {
+    public void startReservation(String date, String token, long memberId) {
         QueueKeys.requireValidDate(date);
 
-        if (!repository.startReservation(date, token, clock.millis(), properties.reservationTtl())) {
+        if (!repository.startReservation(date, token, memberId, clock.millis(), properties.reservationTtl())) {
             throw new QueueException.Expired("입장 가능 시간이 지났습니다.");
         }
     }

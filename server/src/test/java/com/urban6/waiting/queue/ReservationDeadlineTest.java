@@ -45,6 +45,9 @@ class ReservationDeadlineTest {
         }
     }
 
+    private static final long MEMBER = 1L;
+    private static final long OTHER_MEMBER = 2L;
+
     @Autowired WaitingQueueService waitingQueueService;
     @Autowired MutableClock clock;
     @Autowired QueueProperties properties;
@@ -74,7 +77,7 @@ class ReservationDeadlineTest {
         long afterClaim = activeUntil(ticket);
         assertThat(afterClaim).isEqualTo(clock.millis() + properties.sessionTtl().toMillis());
 
-        waitingQueueService.startReservation(ticket.date(), ticket.token());
+        waitingQueueService.startReservation(ticket.date(), ticket.token(), MEMBER);
 
         assertThat(activeUntil(ticket)).isEqualTo(clock.millis() + properties.reservationTtl().toMillis());
         assertThat(activeUntil(ticket)).isLessThan(afterClaim);
@@ -84,7 +87,7 @@ class ReservationDeadlineTest {
     @DisplayName("예약 시간이 지나면 활성이 아니게 된다")
     void slotExpiresAfterReservationTtl() {
         Ticket ticket = admit();
-        waitingQueueService.startReservation(ticket.date(), ticket.token());
+        waitingQueueService.startReservation(ticket.date(), ticket.token(), MEMBER);
 
         clock.advance(properties.reservationTtl().minusSeconds(1));
         assertThat(waitingQueueService.activeUntil(ticket.date(), ticket.token())).isPresent();
@@ -97,10 +100,10 @@ class ReservationDeadlineTest {
     @DisplayName("만료된 슬롯은 로그인으로 되살릴 수 없다")
     void startReservationCannotReviveAnExpiredSlot() {
         Ticket ticket = admit();
-        waitingQueueService.startReservation(ticket.date(), ticket.token());
+        waitingQueueService.startReservation(ticket.date(), ticket.token(), MEMBER);
         clock.advance(properties.reservationTtl().plusSeconds(1));
 
-        assertThatThrownBy(() -> waitingQueueService.startReservation(ticket.date(), ticket.token()))
+        assertThatThrownBy(() -> waitingQueueService.startReservation(ticket.date(), ticket.token(), MEMBER))
                 .isInstanceOf(QueueException.Expired.class);
 
         assertThat(waitingQueueService.activeUntil(ticket.date(), ticket.token())).isEmpty();
@@ -110,7 +113,7 @@ class ReservationDeadlineTest {
     @DisplayName("반납하면 만료를 기다리지 않고 즉시 자리가 빈다")
     void releaseFreesTheSlotImmediately() {
         Ticket ticket = admit();
-        waitingQueueService.startReservation(ticket.date(), ticket.token());
+        waitingQueueService.startReservation(ticket.date(), ticket.token(), MEMBER);
 
         waitingQueueService.release(ticket.date(), ticket.token());
 
@@ -135,11 +138,11 @@ class ReservationDeadlineTest {
     @DisplayName("로그인을 다시 해도 예약 시간이 늘어나지 않는다")
     void repeatedLoginDoesNotExtendTheSlot() {
         Ticket ticket = admit();
-        waitingQueueService.startReservation(ticket.date(), ticket.token());
+        waitingQueueService.startReservation(ticket.date(), ticket.token(), MEMBER);
         long afterLogin = activeUntil(ticket);
 
         clock.advance(properties.reservationTtl().minusMinutes(1));
-        waitingQueueService.startReservation(ticket.date(), ticket.token());
+        waitingQueueService.startReservation(ticket.date(), ticket.token(), MEMBER);
 
         assertThat(activeUntil(ticket)).isEqualTo(afterLogin);
     }
@@ -148,11 +151,24 @@ class ReservationDeadlineTest {
     @DisplayName("로그인한 뒤 입장 확정을 불러도 sessionTtl로 되돌아가지 않는다")
     void claimAfterLoginDoesNotRestoreSessionTtl() {
         Ticket ticket = admit();
-        waitingQueueService.startReservation(ticket.date(), ticket.token());
+        waitingQueueService.startReservation(ticket.date(), ticket.token(), MEMBER);
         long afterLogin = activeUntil(ticket);
 
         clock.advance(Duration.ofMinutes(1));
         waitingQueueService.claim(ticket.date(), ticket.token());
+
+        assertThat(activeUntil(ticket)).isEqualTo(afterLogin);
+    }
+
+    @Test
+    @DisplayName("한 입장권으로 다른 회원이 로그인할 수 없다")
+    void anotherMemberCannotUseTheSamePass() {
+        Ticket ticket = admit();
+        waitingQueueService.startReservation(ticket.date(), ticket.token(), MEMBER);
+        long afterLogin = activeUntil(ticket);
+
+        assertThatThrownBy(() -> waitingQueueService.startReservation(ticket.date(), ticket.token(), OTHER_MEMBER))
+                .isInstanceOf(QueueException.Expired.class);
 
         assertThat(activeUntil(ticket)).isEqualTo(afterLogin);
     }
@@ -163,7 +179,7 @@ class ReservationDeadlineTest {
         Ticket ticket = waitingQueueService.enqueue();
         promoteAllShards();
 
-        assertThatThrownBy(() -> waitingQueueService.startReservation(ticket.date(), ticket.token()))
+        assertThatThrownBy(() -> waitingQueueService.startReservation(ticket.date(), ticket.token(), MEMBER))
                 .isInstanceOf(QueueException.Expired.class);
     }
 

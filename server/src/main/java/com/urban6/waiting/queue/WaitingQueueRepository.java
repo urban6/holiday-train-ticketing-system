@@ -93,22 +93,30 @@ public class WaitingQueueRepository {
 
     /** 처음 확정할 때만 만료를 sessionTtl로 찍는다. @return 활성이 아니거나 이미 만료됐으면 false */
     public boolean claim(String date, String uuid, long nowMillis, Duration sessionTtl) {
-        return advanceStage(claimScript, "입장 확정", date, uuid, nowMillis, sessionTtl);
+        return advanceStage(claimScript, "입장 확정", date, uuid,
+                String.valueOf(nowMillis), String.valueOf(sessionTtl.toMillis()));
     }
 
-    /** 처음 로그인할 때만 만료를 reservationTtl로 찍는다. @return 활성이 아니거나 만료됐거나 확정 전이면 false */
-    public boolean startReservation(String date, String uuid, long nowMillis, Duration reservationTtl) {
-        return advanceStage(reserveScript, "예약 시간 시작", date, uuid, nowMillis, reservationTtl);
+    /**
+     * 처음 로그인할 때만 만료를 reservationTtl로 찍고 입장권을 그 회원에 묶는다.
+     * @return 활성이 아니거나 만료됐거나, 확정 전이거나, 다른 회원에 묶였으면 false
+     */
+    public boolean startReservation(String date, String uuid, long memberId, long nowMillis,
+                                    Duration reservationTtl) {
+        return advanceStage(reserveScript, "예약 시간 시작", date, uuid,
+                String.valueOf(nowMillis), String.valueOf(reservationTtl.toMillis()),
+                String.valueOf(memberId));
     }
 
     private boolean advanceStage(RedisScript<Long> script, String operation, String date, String uuid,
-                                 long nowMillis, Duration ttl) {
+                                 String... args) {
         int shard = shardOf(uuid);
+        String[] scriptArgs = new String[args.length + 1];
+        scriptArgs[0] = uuid;
+        System.arraycopy(args, 0, scriptArgs, 1, args.length);
         Long advanced = execute(script, operation, date, shard,
                 List.of(QueueKeys.active(date, shard), QueueKeys.stage(date, shard)),
-                uuid,
-                String.valueOf(nowMillis),
-                String.valueOf(ttl.toMillis()));
+                scriptArgs);
 
         return advanced != null && advanced == 1L;
     }

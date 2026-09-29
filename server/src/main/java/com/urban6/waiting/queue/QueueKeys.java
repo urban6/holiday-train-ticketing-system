@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
  * waiting:{date}:{shard}:seq   String 샤드별 단조 증가 순번 카운터
  * active:{date}:{shard}        ZSet   member=uuid, score=만료 epoch ms
  * poll:{date}:{shard}          ZSet   member=uuid, score=다음 폴링 기한 epoch ms
- * stage:{date}:{shard}         Hash   field=uuid, value=claimed | reserving
+ * stage:{date}:{shard}         Hash   field=uuid, value=claimed | 로그인한 memberId
  * </pre>
  *
  * <p>{@code date}를 키에서 빼면 안 된다. 키의 유예가 자정을 넘어 다음 창과 섞이고,

@@ -49,7 +49,7 @@ public class AuthController {
 
         Pass pass = PassCookie.read(request).orElseThrow();
         try {
-            waitingQueueService.startReservation(pass.date(), pass.token());
+            waitingQueueService.startReservation(pass.date(), pass.token(), member.id());
         } catch (QueueException.Expired e) {
             // 세션을 만들기 전에 걸러야 로그인만 되고 입장권은 없는 상태가 생기지 않는다.
             log.debug("예약 시간을 열지 못했다. 입장권이 이미 만료됐다.");
