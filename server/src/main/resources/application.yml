@@ -95,10 +95,6 @@ queue:
   # 한 주기에 회수할 최대 인원. max-batch와 같은 이유.
   max-sweep: 500
 
-  # 승격·회수 스케줄러를 이 인스턴스에서 돌릴지. WAS를 다중화하면 정확히 1대만 true여야 한다.
-  # 여러 대가 돌면 실효 배치가 대수만큼 커진다.
-  scheduler-enabled: ${QUEUE_SCHEDULER_ENABLED:true}
-
 # 예약 설정. queue와 마찬가지로 이 블록이 없으면 기동에 실패한다.
 reservation:
   max-per-member: 6

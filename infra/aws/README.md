@@ -351,10 +351,9 @@ RATE=100000 DURATION=15s MAXVUS=10000 ./measure.sh burst   # 동시 도착 (open
 
 ## 2단계로 넘어가기 전에
 
-README의 [인프라 아키텍처](../../README.md#인프라-아키텍처)가 짚어 둔 두 가지 — **세션 외부화**와
-**스케줄러 단일화** — 는 이미 구현되어 있습니다. 배경은 `Member.java`와 `application.yml`의
-`queue.scheduler-enabled` 주석에 있습니다. 아래는 이 둘이 준비됐다는 전제로 WAS 2대를 실제로
-배치하는 방법입니다.
+WAS를 여러 대로 늘리려면 세션 외부화가 필요하고, 이미 구현되어 있습니다(배경은 `Member.java`).
+승격·회수 스케줄러는 모든 WAS에서 돌므로 따로 설정할 것이 없습니다. promote.lua가 정원을 원자적으로
+세서 여러 대가 동시에 불러도 정원을 넘지 않습니다. 아래는 WAS 2대를 실제로 배치하는 방법입니다.
 
 ### 인스턴스
 
@@ -380,17 +379,14 @@ WAS2에서 무심코 다시 돌리면 WAS1이 쓰던 비밀번호가 조용히 �
 
 1. **WAS1에서만** `init-db.sh`를 실행합니다.
 2. 결과로 만들어진 `/etc/waiting/env`를 WAS2에 `scp`로 복사합니다(권한 640 root:waiting 유지).
-3. WAS2의 env 파일에 한 줄만 고쳐 적습니다: `QUEUE_SCHEDULER_ENABLED=false`.
-
-WAS1은 기본값(`true`, 또는 env 파일에서 줄 자체를 생략)을 그대로 둡니다 — 스케줄러는 WAS1에서만 돕니다.
 
 ### 측정
 
-`WAS_HOST`에 NLB DNS를, `METRICS_HOST`에 스케줄러를 보유한 WAS1의 프라이빗 IP를 따로 줍니다
+`WAS_HOST`에 NLB DNS를, `METRICS_HOSTS`에 모든 WAS의 프라이빗 IP를 콤마로 따로 줍니다
 (이유는 [measure.sh](measure.sh) 헤더 참고).
 
 ```bash
-WAS_HOST=<nlb-dns> METRICS_HOST=<WAS1 프라이빗 IP> REDIS_HOSTS=<m1>,<m2>,<m3> \
+WAS_HOST=<nlb-dns> METRICS_HOSTS=<WAS1 프라이빗 IP>,<WAS2 프라이빗 IP> REDIS_HOSTS=<m1>,<m2>,<m3> \
     ./measure.sh enqueue
 ```
 
@@ -421,7 +417,7 @@ A는 노드 하나만 띄우고 `REDIS_HOSTS`에 그 하나만 주면 그대로 
 
 ```bash
 # k6 인스턴스에서
-export WAS_HOST=<nlb-dns> METRICS_HOST=<WAS1 IP>
+export WAS_HOST=<nlb-dns> METRICS_HOSTS=<WAS1 IP>,<WAS2 IP>,...   # 모든 WAS
 
 # 런 A — 단일 노드
 export REDIS_HOSTS=<redis1>

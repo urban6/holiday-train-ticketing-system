@@ -6,20 +6,18 @@ import com.urban6.waiting.queue.WaitingQueueRepository.Promotion;
 import com.urban6.waiting.queue.WaitingQueueService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
  * 활성 정원에 빈 자리가 생기면 대기열 앞에서 채운다.
  *
- * <p>WAS를 다중화하면 {@code queue.scheduler-enabled}로 한 대에서만 돌린다.
- * 여러 대가 돌면 실효 배치가 대수만큼 커진다.
+ * <p>모든 WAS에서 돈다. promote.lua가 세기와 꺼내기를 한 스크립트로 해서 여러 대가 같은 샤드를
+ * 동시에 불러도 정원을 넘지 않는다. 한 대로 줄이면 그 대가 죽는 순간 입장이 전부 멈춘다.
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
-@ConditionalOnProperty(name = "queue.scheduler-enabled", havingValue = "true", matchIfMissing = true)
 public class AdmissionScheduler {
 
     private final WaitingQueueService waitingQueueService;

@@ -12,9 +12,9 @@
 # 초기화가 아무 키도 못 찾고, CPU·ops 합계에는 복제로 들어온 몫이 얹혀 분모가 흐려진다.
 # 단일 노드로 재는 대조군(런 A)에서는 한 대만 적으면 그대로 동작한다.
 #
-# 2단계(NLB + WAS N대)에서는 WAS_HOST에 NLB DNS를 주고, METRICS_HOST에 스케줄러를 보유한
-# WAS의 프라이빗 IP를 따로 준다 — queue.* 지표가 프로세스 로컬이라 NLB 너머로는 못 읽는다.
-#   WAS_HOST=<nlb-dns> METRICS_HOST=10.0.1.21 REDIS_HOSTS=... ./measure.sh enqueue
+# 2단계(NLB + WAS N대)에서는 WAS_HOST에 NLB DNS를 주고, METRICS_HOSTS에 모든 WAS의 프라이빗 IP를
+# 콤마로 따로 준다 — queue.* 지표가 프로세스 로컬이라 NLB 너머로는 못 읽는다.
+#   WAS_HOST=<nlb-dns> METRICS_HOSTS=10.0.1.21,10.0.1.22 REDIS_HOSTS=... ./measure.sh enqueue
 #
 # enqueue와 burst는 서로 다른 것을 잰다. 같은 축에 두면 안 된다.
 #   enqueue  closed model — 응답을 받아야 다음을 보낸다. 포화되는 곳은 CPU다.
@@ -77,15 +77,12 @@ K6_DIR="$(cd "$(dirname "$0")/../../k6" && pwd)"
 BASE_URL="http://$WAS_HOST:8080"
 
 # queue.* 지표는 프로세스 로컬 카운터다. 1단계(WAS 1대)는 WAS_HOST가 곧 그 인스턴스라
-# METRICS_HOST를 따로 줄 필요가 없다. 2단계(NLB 뒤 WAS N대)에서 WAS_HOST가 NLB를 가리키면
+# METRICS_HOSTS를 따로 줄 필요가 없다. 2단계(NLB 뒤 WAS N대)에서 WAS_HOST가 NLB를 가리키면
 # 요청이 매번 다른 인스턴스로 갈 수 있어 검증값이 런마다 들쭉날쭉해진다 — 그때는
-# METRICS_HOST에 스케줄러를 보유한(queue.scheduler-enabled=true) WAS의 프라이빗 IP를 준다.
-METRICS_HOST=${METRICS_HOST:-$WAS_HOST}
-METRICS_URL="http://$METRICS_HOST:8080"
-
-# 위 METRICS_HOST는 스케줄러를 가진 한 대다. 승격·회수는 그 한 대에서만 일어나므로
-# queue.promoted / queue.swept / queue.waiting / queue.active는 거기서 읽는 것이 맞다.
-# 대를 여러 곳에서 더해야 하는 지표는 지금 없다.
+# METRICS_HOSTS에 모든 WAS의 프라이빗 IP를 준다. 승격·회수가 모든 WAS에서 돌아
+# queue.promoted / queue.swept가 대마다 나뉘어 쌓이므로, 한 대만 적으면 합계가 모자란다.
+METRICS_HOSTS=${METRICS_HOSTS:-$WAS_HOST}
+IFS=',' read -r -a METRICS_NODES <<< "$METRICS_HOSTS"
 
 WARMUP=${WARMUP:-600000}
 USERS=${USERS:-300000}
@@ -186,9 +183,25 @@ reset_queue() {
     echo "-- 초기화 완료 (남은 키: $left)"
 }
 
-metric() {
-    curl -sf "$METRICS_URL/actuator/metrics/$1" \
+metric_at() {
+    curl -sf "http://$1:8080/actuator/metrics/$2" \
         | sed 's/.*"value"://; s/}.*//' || echo "n/a"
+}
+
+# 게이지. 어느 대에서 읽어도 같은 Redis를 본 값이라 첫 대에서 읽는다.
+metric() {
+    metric_at "${METRICS_NODES[0]}" "$1"
+}
+
+# 카운터. 대마다 자기 몫만 세므로 모든 대의 값을 더한다.
+metric_sum() {
+    local total=0 v
+    for node in "${METRICS_NODES[@]}"; do
+        v=$(metric_at "$node" "$1")
+        [ "$v" = "n/a" ] && { echo "n/a"; return; }
+        total=$(awk -v a="$total" -v b="$v" 'BEGIN { printf "%.0f", a + b }')
+    done
+    echo "$total"
 }
 
 # ── Redis 계측 ────────────────────────────────────────────────────────────
@@ -515,13 +528,13 @@ printf '\n--stat 원본: %s\n' "$REDIS_STAT_LOG"
 
 echo
 echo "-- 큐 지표 (스케줄러 주기에만 갱신된다) --"
-# 넷 다 METRICS_HOST 한 대에서 읽는다. 게이지 둘은 어느 대에서 읽어도 같은 Redis를 본
-# 값이고, 카운터 둘은 스케줄러를 가진 그 한 대에만 쌓인다.
+# 게이지 둘은 어느 대에서 읽어도 같은 Redis를 본 값이고, 카운터 둘은 대마다 나뉘어 쌓여
+# METRICS_HOSTS 전체를 더한다.
 #
 # 넷 다 샤드 태그가 붙어 있지만 태그를 지정하지 않으면 actuator가 합계를 준다.
 # 샤드별로 나눠 보려면 ?tag=shard:0 을 붙인다 — 위 "샤드별 분배"가 Redis 쪽에서 본
 # 같은 값이라, 둘이 어긋나면 지표 수집이 아니라 스케줄러가 한 샤드를 빠뜨린 것이다.
 printf 'queue.waiting        %s\n' "$(metric queue.waiting)"
 printf 'queue.active         %s\n' "$(metric queue.active)"
-printf 'queue.promoted       %s  <- ÷ 경과 시간 × 영업시간 = 대기열 총량 상한\n' "$(metric queue.promoted)"
-printf 'queue.swept          %s\n' "$(metric queue.swept)"
+printf 'queue.promoted       %s  <- ÷ 경과 시간 × 영업시간 = 대기열 총량 상한\n' "$(metric_sum queue.promoted)"
+printf 'queue.swept          %s\n' "$(metric_sum queue.swept)"

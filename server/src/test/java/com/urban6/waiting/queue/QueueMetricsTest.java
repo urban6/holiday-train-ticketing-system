@@ -109,6 +109,17 @@ class QueueMetricsTest {
     }
 
     @Test
+    @DisplayName("승격 주기가 돌면 승격 인원이 없어도 마지막 승격 시각이 기록된다")
+    void promotionCycleRecordsLastRunTime() {
+        clock.advance(java.time.Duration.ofMinutes(1));
+
+        admissionScheduler.promote();
+
+        assertThat(registry.get("queue.promote.last-run").gauge().value())
+                .isEqualTo(clock.millis() / 1000.0);
+    }
+
+    @Test
     @DisplayName("회수 주기가 돌면 누적 유령 회수 인원이 기록된다")
     void sweepCycleRecordsReclaimedGhosts() {
         waitingQueueService.enqueue();
